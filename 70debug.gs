@@ -226,7 +226,7 @@ function clearAliasCaches_() {
   __CANON_MAPS = null;            // General fallback cache
   __CANON_MAP_ALIASES = null;
   __DIV_CANON_MAPS = null;        // NEW
-  log_('INFO','Alias/map caches cleared');
+  //log_('INFO','Alias/map caches cleared');
 }
 
 function reloadAliasCaches_() {
@@ -234,11 +234,11 @@ function reloadAliasCaches_() {
   try { loadAliases_(); } catch(e){ log_('WARN','loadAliases_ failed', String(e)); }
   try { loadMapAliases_(); } catch(e){ log_('WARN','loadMapAliases_ failed', String(e)); }
   try { loadDivisionCanonicalMaps_(); buildCanonMapAliases_(); } catch(e){ log_('WARN','map alias build failed', String(e)); }
-  log_('INFO','Alias/map caches reloaded', {
+  /*log_('INFO', 'Alias/map caches reloaded', {
     teamAliases: __TEAM_ALIAS_CACHE ? Object.keys(__TEAM_ALIAS_CACHE).length : 0,
     mapAliases: __CANON_MAP_ALIASES ? Object.keys(__CANON_MAP_ALIASES).length : 0,
     divCanon: __DIV_CANON_MAPS ? __DIV_CANON_MAPS.size : 0
-  });
+  });*/
 }
 
 function reloadAliasCaches(){

@@ -211,6 +211,62 @@ function log_(level, msg, data) {
   } catch (_){}
 }
 
+function _makeCounters_() {
+  return {
+    seen: 0,               // messages iterated this run
+    parsedOK: 0,           // messages that parsed into a score object
+    applied: 0,            // wrote new values (NEW or EDIT)
+    edits: 0,              // subset: edits (write.prev && !REPARSE_FORCE)
+    reparseApplied: 0,     // reparse changed cells
+    reparseNoChange: 0,    // reparse skipped because cells already matched
+    skipSameHash: 0,       // identical content already handled
+    placeholders: 0,       // skipped due to placeholder teams
+    unknownTeams: 0,       // skipped due to unknown team(s)
+    targetMissing: 0,      // couldn’t locate division/row
+    writeBlocked: 0,       // protected range or guard prevented write
+    banners: 0,            // skipped weekly banner
+    unparsable: 0          // parseScoreLine_ returned null
+  };
+}
+
+function _postRunSummary_(whereChannelId, ctx, cnt) {
+  // Build a compact, readable line for Discord
+  const secs = Math.round((ctx.durationMs || 0)/1000);
+  const head = (ctx.kind === 'pollFromId')
+    ? `🧾 Poll summary (fromId ${ctx.startId}${ctx.includeStart ? ' incl' : ''})`
+    : `🧾 Poll summary`;
+
+  const cursorBit = (ctx.kind === 'pollScores' && ctx.cursorBefore)
+    ? ` • cursor ${ctx.cursorBefore} → ${ctx.cursorAfter || ctx.cursorBefore}`
+    : '';
+
+  const windowBit = (ctx.kind === 'pollFromId' && ctx.rangeMin && ctx.rangeMax)
+    ? ` • id ${ctx.rangeMin} → ${ctx.rangeMax}`
+    : '';
+
+  const parts = [
+    `seen ${cnt.seen}`,
+    `parsed ${cnt.parsedOK}`,
+    `applied ${cnt.applied}`,
+    (cnt.edits ? `edits ${cnt.edits}` : ''),
+    (cnt.reparseApplied ? `♻️✅ ${cnt.reparseApplied}` : ''),
+    (cnt.reparseNoChange ? `♻️ ${cnt.reparseNoChange}` : ''),
+    (cnt.skipSameHash ? `same ${cnt.skipSameHash}` : ''),
+    (cnt.placeholders ? `placeholders ${cnt.placeholders}` : ''),
+    (cnt.unknownTeams ? `unknown ${cnt.unknownTeams}` : ''),
+    (cnt.targetMissing ? `no-target ${cnt.targetMissing}` : ''),
+    (cnt.writeBlocked ? `blocked ${cnt.writeBlocked}` : ''),
+    (cnt.banners ? `banners ${cnt.banners}` : ''),
+    (cnt.unparsable ? `unparsable ${cnt.unparsable}` : '')
+  ].filter(Boolean);
+
+  const line = `${head}${cursorBit}${windowBit} • ${parts.join(' • ')} • ${secs}s`;
+
+  // Log to Google Sheets logs
+  log_('INFO','PollSummary', { ctx, cnt, line });
+}
+
+
 /*************** TEXT MANIPULATION AND COMPARISON ***************/
 function stripEmojis_(text, opts) {
   if (!text) return '';

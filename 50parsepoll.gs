@@ -90,21 +90,22 @@ function pollScores_() {
 
   if (shouldFetchRecentPage_()) {
     const recentRaw = fetchChannelMessages_(SCORES_CHANNEL_ID, null, RECENT_LIMIT);
+
     const cutoff = Date.now() - BACKFILL_MINUTES * 60 * 1000;
+
+    // Keep anything created or edited within the window (edits to older IDs included)
     const recent = (recentRaw || [])
-      // only include messages newer than our cursor
-      .filter(m => compareSnowflakes(m.id, cursorBefore) > 0)
-      // and within time window (for extra safety)
       .filter(m => {
         const t = m && (m.edited_timestamp || m.timestamp);
         const n = t ? Date.parse(t) : 0;
         return n >= cutoff;
       })
-      .sort((a,b)=>compareSnowflakes(a.id,b.id));
+      .sort((a,b)=>compareSnowflakes(a.id,b.id)); // oldest → newest
 
-    // dedupe & cap
+    // Dedupe against the main "after cursor" page and cap
     const seen = new Set((merged||[]).map(m => String(m.id)));
-    const add = recent.filter(r => !seen.has(String(r.id))).slice(-BACKFILL_MERGE_MAX);
+    const add  = recent.filter(r => !seen.has(String(r.id))).slice(-BACKFILL_MERGE_MAX);
+
     merged = merged.concat(add);
   }
 
@@ -134,6 +135,12 @@ function pollScores_() {
     const contentHash = computeContentHash_(content);
     const editedTs    = String(m.edited_timestamp || '');
 
+    const prevByMsg = findReceiptByMsgId_(msgId);
+    if (!REPARSE_FORCE && prevByMsg && prevByMsg.contentHash === contentHash) {
+      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipSameHash', { msgId });
+      continue;
+    }
+
     const parsed = parseScoreLine_(content);
     if (!parsed) {
       if (PARSE_DEBUG_VERBOSE) log_('INFO','Unparsable message', { msgId, content });
@@ -156,12 +163,6 @@ function pollScores_() {
     parsed.__editedTs    = editedTs;
     parsed.__msgId       = msgId;
     parsed.__authorId    = authorId;
-
-    const prevByMsg = findReceiptByMsgId_(msgId);
-    if (!REPARSE_FORCE && prevByMsg && prevByMsg.contentHash === contentHash) {
-      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipSameHash', { msgId });
-      continue;
-    }
 
     if (parsed.team1 === '__PLACEHOLDER__' || parsed.team2 === '__PLACEHOLDER__') {
       log_('INFO','Skip placeholder team (pre-unknown-check)', { msgId, team1: parsed.team1, team2: parsed.team2 });
@@ -307,6 +308,13 @@ function pollFromIdOnce_(startId, includeStart) {
     const contentHash = computeContentHash_(content);
     const editedTs    = String(m.edited_timestamp || '');
 
+    const prevByMsg = findReceiptByMsgId_(msgId);
+    if (!REPARSE_FORCE && prevByMsg && prevByMsg.contentHash === contentHash) {
+      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipSameHash', { msgId });
+      lastProcessedId = msgId;   // keep advancing the monotonic pointer
+      continue;
+    }
+
     const parsed = parseScoreLine_(content);
     if (!parsed) {
       if (PARSE_DEBUG_VERBOSE) log_('INFO','Unparsable message', { msgId, content });
@@ -324,14 +332,6 @@ function pollFromIdOnce_(startId, includeStart) {
         t2: parsed.team2, s2: parsed.score2,
         noteFF: !!parsed.noteFF
       });
-    }
-
-    // skip if exact content already handled (unless forcing)
-    const prevByMsg = findReceiptByMsgId_(msgId);
-    if (!REPARSE_FORCE && prevByMsg && prevByMsg.contentHash === contentHash) {
-      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipSameHash', { msgId });
-      lastProcessedId = msgId;
-      continue;
     }
 
     // annotate after we know we’ll process

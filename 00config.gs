@@ -21,9 +21,9 @@ var ERROR_DMS_ALWAYS = true;           // still DM on problems even if DM_ENABLE
 var DM_DEBUG_ECHO_CHANNEL = '1427665757675978844'; // optional: channelId to echo suppressed DMs for debugging ('' = no echo)
 
 /*************** CONFIG ***************/
+const RELAY_BASE  = 'RELAY_BASE_URL_HIDDEN'; // e.g. https://discord-relay-xxx.a.run.app
 //CODE_TO_GENERATE_SECRET = 'node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"';
 const RELAY_AUTH  = 'RELAY_AUTH_SECRET_HIDDEN';    // must match RELAY_SHARED_SECRET on relay
-const RELAY_BASE  = 'RELAY_BASE_URL_HIDDEN'; // e.g. https://discord-relay-xxx.a.run.app
 
 // Discord channels
 const SCORES_CHANNEL_ID   = '1061813400360988752';    // where users post match results
@@ -70,8 +70,8 @@ var WEEKLY_BANNER_RULE = 111;
 var DEFAULT_BLOCK_HEIGHT = 12;
 
 // Custom emoji must be "<:name:ID>"
-var EMOJI_DOD = '<a:dod:1427741756849655809>';   // <-- replace with your real ID
-var EMOJI_KTP = '<:KTP:1002382703020212245>';   // <-- replace with your real ID
+var EMOJI_DOD = '<a:dod:1427741756849655809>';   // a is required for animated emojis; ID is pulled from KTP server
+var EMOJI_KTP = '<:KTP:1002382703020212245>';    // ID is pulled from KTP server
 
 // If your map headers are always in column A, keep this = 1
 var MAP_HEADER_COLUMN = 1;
@@ -108,7 +108,7 @@ var RUNTIME_SAFETY_BUFFER = 10 * 1000;     // stop ~10s early to finish cleanly
 
 // --- backoff after quota errors ---
 var QUOTA_BACKOFF_MINUTES = 15;   // skip polls for this long after an error
-var RECENT_PAGE_EVERY_N    = 4;   // only fetch the "recent page" every N polls
+var RECENT_PAGE_EVERY_N    = 1;   // only fetch the "recent page" every N polls
 
 // (optional) jitter so multiple sheets don’t all hit the relay at once
 var FETCH_JITTER_MS_MIN = 150;
