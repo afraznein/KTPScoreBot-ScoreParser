@@ -73,27 +73,20 @@ function parseScoreLine_(raw) {
 
 /*************** POLLING ***************/
 function pollScores_() {
-  if (AUTO_RELOAD_ALIASES) reloadAliasCaches_();  // cheap + deterministic
-  if (isQuotaCooldown_()) {
-    SpreadsheetApp.getActive().toast('Poll skipped (relay in cooldown).');
-    return 0;
-  }
+  if (AUTO_RELOAD_ALIASES) reloadAliasCaches_();   // cheap + deterministic
+  if (isQuotaCooldown_()) { SpreadsheetApp.getActive().toast('Poll skipped (relay in cooldown).'); return 0; }
 
   const startMs = nowMs_();
-
-  // --- ALWAYS use the per-channel cursor
   const cursorBefore = getCursor_(SCORES_CHANNEL_ID) || '';
+  const cnt = _makeCounters_();
 
   // main page after cursor (smaller limit)
-  const msgs = fetchChannelMessages_(SCORES_CHANNEL_ID, cursorBefore, DEFAULT_LIMIT); // after=cursorBefore
+  const msgs = fetchChannelMessages_(SCORES_CHANNEL_ID, cursorBefore, DEFAULT_LIMIT);
   let merged = msgs || [];
 
   if (shouldFetchRecentPage_()) {
     const recentRaw = fetchChannelMessages_(SCORES_CHANNEL_ID, null, RECENT_LIMIT);
-
     const cutoff = Date.now() - BACKFILL_MINUTES * 60 * 1000;
-
-    // Keep anything created or edited within the window (edits to older IDs included)
     const recent = (recentRaw || [])
       .filter(m => {
         const t = m && (m.edited_timestamp || m.timestamp);
@@ -102,17 +95,14 @@ function pollScores_() {
       })
       .sort((a,b)=>compareSnowflakes(a.id,b.id)); // oldest → newest
 
-    // Dedupe against the main "after cursor" page and cap
     const seen = new Set((merged||[]).map(m => String(m.id)));
     const add  = recent.filter(r => !seen.has(String(r.id))).slice(-BACKFILL_MERGE_MAX);
-
     merged = merged.concat(add);
   }
 
   if (!merged.length) return 0;
   merged.sort((a,b)=>compareSnowflakes(a.id,b.id)); // oldest → newest
 
-  // Track the furthest ID we actually saw this run
   let cursorAfter = cursorBefore;
   let processed = 0;
 
@@ -120,44 +110,36 @@ function pollScores_() {
     if (processed >= MAX_MESSAGES_PER_POLL) break;
     if (nowMs_() - startMs > (MAX_MS_PER_POLL - RUNTIME_SAFETY_BUFFER)) break;
 
-    const msgId = String(m.id);
-    // advance our local “after” pointer as we see messages
+    cnt.seen++;
+
+    const msgId   = String(m.id);
     cursorAfter = maxSnowflake(cursorAfter, msgId);
 
     const authorId= String(m.author?.id || '');
     const content = String(m.content || '').trim();
     if (!content) continue;
-    if (isWeeklyScoresBanner_(content)) {
-      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipWeeklyBanner', { msgId });
-      continue;
-    }
+
+    if (isWeeklyScoresBanner_(content)) { cnt.banners++; if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipWeeklyBanner',{msgId}); continue; }
 
     const contentHash = computeContentHash_(content);
     const editedTs    = String(m.edited_timestamp || '');
 
+    // skip unchanged (fast path)
     const prevByMsg = findReceiptByMsgId_(msgId);
     if (!REPARSE_FORCE && prevByMsg && prevByMsg.contentHash === contentHash) {
-      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipSameHash', { msgId });
+      cnt.skipSameHash++;
+      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipSameHash',{msgId});
       continue;
     }
 
     const parsed = parseScoreLine_(content);
-    if (!parsed) {
-      if (PARSE_DEBUG_VERBOSE) log_('INFO','Unparsable message', { msgId, content });
-      continue;
+    if (!parsed) { cnt.unparsable++; if (PARSE_DEBUG_VERBOSE) log_('INFO','Unparsable message',{msgId,content}); continue; }
+    if (PARSE_DEBUG_VERBOSE) {
+      log_('INFO','ParsedOK', 
+      {msgId,divisionHint: parsed.division || '',map: parsed.map,t1: parsed.team1, s1: parsed.score1,op: parsed.op,t2: parsed.team2, s2: parsed.score2,noteFF: !!parsed.noteFF});
     }
 
-    if (PARSE_DEBUG_VERBOSE) {
-      log_('INFO','ParsedOK', {
-        msgId,
-        divisionHint: parsed.division || '',
-        map: parsed.map,
-        t1: parsed.team1, s1: parsed.score1,
-        op: parsed.op,
-        t2: parsed.team2, s2: parsed.score2,
-        noteFF: !!parsed.noteFF
-      });
-    }
+    cnt.parsedOK++;
 
     parsed.__contentHash = contentHash;
     parsed.__editedTs    = editedTs;
@@ -165,6 +147,7 @@ function pollScores_() {
     parsed.__authorId    = authorId;
 
     if (parsed.team1 === '__PLACEHOLDER__' || parsed.team2 === '__PLACEHOLDER__') {
+      cnt.placeholders++;
       log_('INFO','Skip placeholder team (pre-unknown-check)', { msgId, team1: parsed.team1, team2: parsed.team2 });
       continue;
     }
@@ -173,16 +156,15 @@ function pollScores_() {
     if (!isCanonTeam_(parsed.team1)) unknown.push(parsed.team1);
     if (!isCanonTeam_(parsed.team2)) unknown.push(parsed.team2);
     if (unknown.length) {
+      cnt.unknownTeams++;
       alertUnrecognizedTeams_(authorId, parsed.map, parsed.team1, parsed.team2, unknown, msgId);
-      maybeSendErrorDM_(authorId,
-        `I couldn’t match those team name(s): ${unknown.join(', ')} on \`${parsed.map}\`. ` +
-        `Please use exact names from the sheet or add aliases.`
-      );
+      maybeSendErrorDM_(authorId, `I couldn’t match those team name(s): ${unknown.join(', ')} on \`${parsed.map}\`. Please use exact names from the sheet or add aliases.`);
       continue;
     }
 
     const target = autodetectDivisionAndRow_(parsed.map, parsed.team1, parsed.team2, parsed.division);
     if (!target) {
+      cnt.targetMissing++;
       const diag = {};
       for (const d of DIVISION_SHEETS) {
         const sh = getSheetByName_(d); if (!sh) continue;
@@ -190,46 +172,36 @@ function pollScores_() {
         diag[d] = b ? { top:b.top, date:b.weekDate } : null;
       }
       log_('WARN','Could not determine division/row', { msgId, map: parsed.map, t1: parsed.team1, t2: parsed.team2, diag });
-
-      maybeSendErrorDM_(authorId,
-        `I couldn’t find your matchup \`${parsed.team1}\` vs \`${parsed.team2}\` on \`${parsed.map}\`. ` +
-        `Please ensure team names match the sheet (A3:A22) and the map token is first (e.g., \`dod_lennon2\`).`
-      );
+      maybeSendErrorDM_(authorId, `I couldn’t find your matchup \`${parsed.team1}\` vs \`${parsed.team2}\` on \`${parsed.map}\`. Please ensure team names match the sheet (A3:A22) and the map token is first (e.g., \`dod_lennon2\`).`);
       continue;
     }
 
     const write = applyScoresToRow_(target.sheet, target.row, target.team1, target.team2, parsed);
-    if (!write.ok) {
-      log_('WARN','Update blocked/failed', { reason: write.reason, sheet: target.sheet.getName(), row: target.row, msgId });
-      continue;
+    if (!write.ok) { cnt.writeBlocked++; log_('WARN','Update blocked/failed',{reason:write.reason,sheet:target.sheet.getName(),row:target.row,msgId}); continue; }
+
+    // Count outcomes
+    if (REPARSE_FORCE) {
+      if (write.noChange) cnt.reparseNoChange++; else cnt.reparseApplied++;
+    } else {
+      cnt.applied++;
+      if (write.prev) cnt.edits++;
     }
 
+    // optional success DM (respect DM_ENABLED and not during reparse if you want)
     if (write.prev && parsed.__authorId && DM_ENABLED && !REPARSE_FORCE) {
       postDM_(parsed.__authorId, `Update applied: ${target.sheet.getName()} row ${target.row} on ${parsed.map} is now ${parsed.team1} ${parsed.score1} ${parsed.op} ${parsed.score2} ${parsed.team2}.`);
     }
-
-    if (PARSE_DEBUG_VERBOSE) {
-      log_('INFO','AppliedOK', {
-        msgId,
-        division: target.sheet.getName(),
-        row: target.row,
-        map: parsed.map,
-        t1: parsed.team1, s1: parsed.score1,
-        t2: parsed.team2, s2: parsed.score2
-      });
+    if (PARSE_DEBUG_VERBOSE) {log_('INFO','AppliedOK', 
+      {msgId,division: target.sheet.getName(),row: target.row,map: parsed.map,t1: parsed.team1, s1: parsed.score1,t2: parsed.team2, s2: parsed.score2});
     }
 
     try { postReaction_(SCORES_CHANNEL_ID, msgId, REACT_KTP); postReaction_(SCORES_CHANNEL_ID, msgId, REACT_OK); }
-    catch (e) { log_('WARN','react exceptions', { msgId, error:String(e) }); }
+    catch (e) { log_('WARN','react exceptions',{msgId,error:String(e)}); }
 
-    // Channel feed line with the new formatter
     if (RESULTS_LOG_CHANNEL) {
       let modeTag = 'OK';
-      if (REPARSE_FORCE) {
-        modeTag = write.noChange ? 'REPARSE_NOCHANGE' : 'REPARSE_APPLIED';
-      } else if (write.prev) {
-        modeTag = 'EDIT';
-      }
+      if (REPARSE_FORCE) modeTag = write.noChange ? 'REPARSE_NOCHANGE' : 'REPARSE_APPLIED';
+      else if (write.prev) modeTag = 'EDIT';
       const prevScoresOpt = write.prevScores || null;
       const line = formatScoreLine_(target.sheet.getName(), target.row, parsed, target, authorId, modeTag, prevScoresOpt);
       relayPost_('/reply', { channelId:String(RESULTS_LOG_CHANNEL), content: line });
@@ -238,13 +210,16 @@ function pollScores_() {
     processed++;
   }
 
-  // --- Only persist if we truly advanced
+  // Persist cursor only if advanced
   if (cursorAfter && compareSnowflakes(cursorAfter, cursorBefore) > 0) {
     setCursor_(SCORES_CHANNEL_ID, cursorAfter);
-    if (PARSE_DEBUG_VERBOSE) log_('INFO','CursorAdvanced', { from: cursorBefore, to: cursorAfter });
+  if (PARSE_DEBUG_VERBOSE) log_('INFO','CursorAdvanced', { from: cursorBefore, to: cursorAfter });
   } else if (PARSE_DEBUG_VERBOSE) {
     log_('INFO','CursorUnchanged', { at: cursorBefore });
   }
+
+  const durationMs = nowMs_() - startMs;
+  _postRunSummary_(RESULTS_LOG_CHANNEL, { kind:'pollScores', cursorBefore, cursorAfter, durationMs }, cnt);
 
   SpreadsheetApp.getActive().toast(`Poll complete: ${processed} msg(s) at ${fmtTs_()}.`);
   return processed;
