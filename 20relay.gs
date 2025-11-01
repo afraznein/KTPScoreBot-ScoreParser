@@ -1,10 +1,21 @@
 /*************** RELAY HELPERS (incl. /dm) ***************/
-function relayGet_(path) {
+/**
+ * Execute GET request to Discord relay service
+ * @param {string} path - API path (e.g., '/messages')
+ * @returns {HTTPResponse} UrlFetchApp response object
+ */
+function relayGet(path) {
   const u = `${RELAY_BASE}${path}`;
   return UrlFetchApp.fetch(u, { method:'get', headers:{ 'X-Relay-Auth': RELAY_AUTH }, muteHttpExceptions:true });
 }
 
-function relayPost_(path, payload) {
+/**
+ * Execute POST request to Discord relay service
+ * @param {string} path - API path (e.g., '/dm')
+ * @param {Object} payload - JSON payload
+ * @returns {HTTPResponse} UrlFetchApp response object
+ */
+function relayPost(path, payload) {
   const u = `${RELAY_BASE}${path}`;
   return UrlFetchApp.fetch(u, {
     method:'post',
@@ -16,7 +27,16 @@ function relayPost_(path, payload) {
 }
 
 /*************** FETCHERS ***************/
-function fetchChannelMessages_(channelId, afterId, limitOpt) {
+/**
+ * Fetch messages from Discord channel via relay service
+ * Includes quota cooldown handling, automatic retry on errors, and jitter
+ *
+ * @param {string} channelId - Discord channel snowflake ID
+ * @param {string|null} afterId - Cursor: fetch messages after this ID (null = most recent)
+ * @param {number} limitOpt - Max messages to fetch (default: DEFAULT_LIMIT, min: 5)
+ * @returns {Array<Object>} Array of Discord message objects, or empty array on error/cooldown
+ */
+function fetchChannelMessages(channelId, afterId, limitOpt) {
   if (isQuotaCooldown_()) return []; // respect cooldown: no relay calls
 
   var limit = Math.max(5, Number(limitOpt || DEFAULT_LIMIT));
@@ -29,7 +49,7 @@ function fetchChannelMessages_(channelId, afterId, limitOpt) {
   Utilities.sleep(jitterMs_());
 
   try {
-    var res = relayGet_('/messages?' + qs);
+    var res = relayGet('/messages?' + qs);
     if (res.getResponseCode && res.getResponseCode() !== 200) {
       var body = (res.getContentText && res.getContentText()) || '';
       if (/Bandwidth quota exceeded/i.test(body)) {
@@ -49,22 +69,22 @@ function fetchChannelMessages_(channelId, afterId, limitOpt) {
     if (limit > 20) {
       try {
         Utilities.sleep(250);
-        return fetchChannelMessages_(channelId, afterId, Math.floor(limit / 2));
+        return fetchChannelMessages(channelId, afterId, Math.floor(limit / 2));
       } catch (_) {}
     }
     throw e;
   }
 }
 
-function fetchSingleMessageWithDiag_(channelId, messageId) {
+function fetchSingleMessageWithDiag(channelId, messageId) {
   // exact
-  let res = relayGet_(`/message/${encodeURIComponent(channelId)}/${encodeURIComponent(messageId)}`);
+  let res = relayGet(`/message/${encodeURIComponent(channelId)}/${encodeURIComponent(messageId)}`);
   let code = res.getResponseCode(), body = res.getContentText();
   if (code === 200) {
     try { return { msg: JSON.parse(body), code, body, triedFallback:false }; } catch (_){}
   }
   // around fallback
-  res = relayGet_(`/messages?channelId=${encodeURIComponent(channelId)}&around=${encodeURIComponent(messageId)}&limit=3`);
+  res = relayGet(`/messages?channelId=${encodeURIComponent(channelId)}&around=${encodeURIComponent(messageId)}&limit=3`);
   code = res.getResponseCode(); body = res.getContentText();
   if (code === 200) {
     try {
@@ -77,12 +97,12 @@ function fetchSingleMessageWithDiag_(channelId, messageId) {
 }
 
 /*************** POSTERS ***************/
-function postReaction_(channelId, messageId, emoji) {
-  const res = relayPost_('/react', { channelId:String(channelId), messageId:String(messageId), emoji:String(emoji) });
+function postReaction(channelId, messageId, emoji) {
+  const res = relayPost('/react', { channelId:String(channelId), messageId:String(messageId), emoji:String(emoji) });
   if (res.getResponseCode() !== 204) log_('WARN','react failed', { code: res.getResponseCode(), body: res.getContentText()?.slice(0,400) });
 }
 
-function postDM_(userId, content) {
+function postDM(userId, content) {
   userId  = String(userId || '').trim();
   content = String(content || '').trim();
   if (!userId || !content) return { ok:false, error:'bad_args' };
@@ -95,7 +115,7 @@ function postDM_(userId, content) {
     // Optional: echo suppressed DM into a debug channel
     if (DM_DEBUG_ECHO_CHANNEL) {
       try {
-        relayPost_('/reply', {
+        relayPost('/reply', {
           channelId: String(DM_DEBUG_ECHO_CHANNEL),
           content: `*(suppressed DM to <@${userId}>)* ${content}`
         });
@@ -108,7 +128,7 @@ function postDM_(userId, content) {
 
   // Normal DM send path (unchanged)
   try {
-    const res = relayPost_('/dm', { userId: userId, content: content });
+    const res = relayPost('/dm', { userId: userId, content: content });
     return { ok:true, res: res };
   } catch (e) {
     log_('ERROR', 'DM send failed', { to: userId, err: String(e) });
@@ -116,7 +136,7 @@ function postDM_(userId, content) {
   }
 }
 
-function alertUnrecognizedTeams_(authorId, mapLower, team1U, team2U, unknownList, msgId) {
+function alertUnrecognizedTeams(authorId, mapLower, team1U, team2U, unknownList, msgId) {
   const niceList = unknownList.map(t => `\`${t}\``).join(', ');
   const dm = [
     `Hi! I couldn’t match ${niceList} to the official team list (A3:A22).`,
@@ -124,38 +144,38 @@ function alertUnrecognizedTeams_(authorId, mapLower, team1U, team2U, unknownList
     `Tip: remove any emojis around the name and extra spaces at the start/end.`
   ].join(' ');
 
-  if (authorId) postDM_(String(authorId), dm);
+  if (authorId) postDM(String(authorId), dm);
 
   if (RESULTS_LOG_CHANNEL) {
     const mention = authorId ? `<@${authorId}>` : '';
     const alertLine =
       `⚠️ ${mention} score could not be recorded — unknown team ${unknownList.length>1?'names':'name'}: ${niceList} ` +
       `(map \`${mapLower}\`${msgId ? ` | msg ${msgId}` : ''}).`;
-    relayPost_('/reply', { channelId:String(RESULTS_LOG_CHANNEL), content: alertLine });
+    relayPost('/reply', { channelId:String(RESULTS_LOG_CHANNEL), content: alertLine });
   }
 
   log_('WARN', 'Unknown team(s) in submission', { msgId, map: mapLower, team1: team1U, team2: team2U, unknown: unknownList });
 }
 
 // DM errors even if DM_ENABLED=false (controlled by ERROR_DMS_ALWAYS)
-function maybeSendErrorDM_(userId, content) {
+function maybeSendErrorDM(userId, content) {
   if (!userId || !content) return;
-  if (DM_ENABLED === true) { postDM_(userId, content); return; }
+  if (DM_ENABLED === true) { postDM(userId, content); return; }
   if (ERROR_DMS_ALWAYS) {
     // temporarily bypass: call relay directly
-    try { relayPost_('/dm', { userId: String(userId), content: String(content) }); }
+    try { relayPost('/dm', { userId: String(userId), content: String(content) }); }
     catch(e){ log_('WARN','error DM send failed', {e:String(e)}); }
   }
 }
 
 // Format the scoreboard line (used for channel feed)
-function formatScoreLine_(division, row, parsed, target, authorId, modeTag, prevScoresOpt) {
+function formatScoreLine(division, row, parsed, target, authorId, modeTag, prevScoresOpt) {
   const mapShown = parsed.map; // keep dod_* intact
   const left  = `${parsed.team1} ${parsed.score1}`;
   const right = `${parsed.score2} ${parsed.team2}`;
   const op    = parsed.op || '-';
   const by    = authorId ? ` — reported by <@${authorId}>` : '';
-  const link  = parsed.__msgId ? buildDiscordMessageLink_(SCORES_CHANNEL_ID, parsed.__msgId) : '';
+  const link  = parsed.__msgId ? buildDiscordMessageLink(SCORES_CHANNEL_ID, parsed.__msgId) : '';
   const linkBit = link ? ` [jump](${link})` : '';
   const rowBit  = `row ${target.row}`;
   const prevBit = prevScoresOpt ? ` (was ${prevScoresOpt[0]} ${op} ${prevScoresOpt[1]})` : '';
@@ -181,14 +201,14 @@ function formatScoreLine_(division, row, parsed, target, authorId, modeTag, prev
 }
 
 /*************** DISCORD MESSAGE LINK ***************/
-function buildDiscordMessageLink_(channelId, messageId) {
+function buildDiscordMessageLink(channelId, messageId) {
   channelId = String(channelId || '').trim();
   messageId = String(messageId || '').trim();
   if (!channelId || !messageId) return '';
 
   // Ask relay for the channel -> we need guild_id for the link
   try {
-    const res = relayGet_('/channel/' + encodeURIComponent(channelId));
+    const res = relayGet('/channel/' + encodeURIComponent(channelId));
     if (res.getResponseCode && res.getResponseCode() !== 200) {
       throw new Error('relay /channel failed ' + res.getResponseCode());
     }
@@ -200,7 +220,7 @@ function buildDiscordMessageLink_(channelId, messageId) {
     }
     return 'https://discord.com/channels/' + guildId + '/' + channelId + '/' + messageId;
   } catch (e) {
-    log_('WARN', 'buildDiscordMessageLink_ failed', { channelId, messageId, error: String(e) });
+    log_('WARN', 'buildDiscordMessageLink failed', { channelId, messageId, error: String(e) });
     return '';
   }
 }

@@ -1,6 +1,11 @@
 /*************** DEBUG ONE OFF ***************/
-// --- Seeder: skips placeholders & avoids empty setValues ---
-function seedAliasesFromDivisions_() {
+/**
+ * Debug utility: Seed _Aliases sheet with team variants from division tabs
+ * Automatically generates common aliases (with/without "THE", etc.)
+ * Skips placeholders and duplicates
+ * @returns {Object} { added: number } - Count of aliases added
+ */
+function seedAliasesFromDivisions() {
   const ss = SpreadsheetApp.getActive();
 
   // Ensure _Aliases exists and has headers
@@ -27,7 +32,7 @@ function seedAliasesFromDivisions_() {
     // SKIP placeholders like "GOLD A", "SILVER Z", "BRONZE I"
     if (isPlaceholderTeamAnyDiv_(canonUpper)) return;
 
-    const variants = makeTeamVariants_(canonUpper);
+    const variants = makeTeamVariants(canonUpper);
     for (const v of variants) {
       const aliasUpper = String(v || '').trim().toUpperCase();
       if (!aliasUpper) continue;
@@ -73,7 +78,7 @@ function seedAliasesFromDivisions_() {
   return { added: rowsToAppend.length };
 }
 
-function makeTeamVariants_(canonUpper) {
+function makeTeamVariants(canonUpper) {
   const raw = String(canonUpper || '').trim().toUpperCase();
   if (!raw) return [];
 
@@ -103,16 +108,16 @@ function makeTeamVariants_(canonUpper) {
     .filter(s => !isPlaceholderTeamAnyDiv_(s));
 }
 
-function ensureMapAlias_() {
+function ensureMapAlias() {
   return ensureSheet_('_MapAlias', ['token_raw','last_seen','count','example_msgId','authorId']);
 }
 
-function appendMapAliasRows_(rows) {
-  var sh = ensureMapAlias_();
+function appendMapAliasRows(rows) {
+  var sh = ensureMapAlias();
   safeSetValues_(sh, sh.getLastRow() + 1, 1, rows, '_MapAlias');
 }
 
-function seedMapAliasesFromGeneral_() {
+function seedMapAliasesFromGeneral() {
   const ss = SpreadsheetApp.getActive();
 
   // --- Load canonical maps from General!J2:J29 and normalize to lower "dod_*"
@@ -220,7 +225,7 @@ function seedMapAliasesFromGeneral_() {
   };
 }
 
-function clearAliasCaches_() {
+function clearAliasCaches() {
   __TEAM_ALIAS_CACHE = null;
   __MAP_ALIAS_CACHE = null;
   __CANON_MAPS = null;            // General fallback cache
@@ -229,8 +234,8 @@ function clearAliasCaches_() {
   //log_('INFO','Alias/map caches cleared');
 }
 
-function reloadAliasCaches_() {
-  clearAliasCaches_();
+function reloadAliasCaches() {
+  clearAliasCaches();
   try { loadAliases_(); } catch(e){ log_('WARN','loadAliases_ failed', String(e)); }
   try { loadMapAliases_(); } catch(e){ log_('WARN','loadMapAliases_ failed', String(e)); }
   try { loadDivisionCanonicalMaps_(); buildCanonMapAliases_(); } catch(e){ log_('WARN','map alias build failed', String(e)); }
@@ -242,15 +247,15 @@ function reloadAliasCaches_() {
 }
 
 function reloadAliasCaches(){
-  reloadAliasCaches_();
+  reloadAliasCaches();
 }
 
 function seedMapAlias(){
-  seedMapAliasesFromGeneral_();
+  seedMapAliasesFromGeneral();
 }
 
 function seedTeamAlias(){
-  seedAliasesFromDivisions_();
+  seedAliasesFromDivisions();
 }
 
 function ADMIN_ResetPollCursor() {

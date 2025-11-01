@@ -2,9 +2,22 @@
 
 /*************** SPREADSHEET ***************/
 
-function getSheetByName_(name){ return SpreadsheetApp.getActive().getSheetByName(name); }
+/**
+ * Get sheet by name from active spreadsheet
+ * @param {string} name - Sheet name
+ * @returns {Sheet} Google Sheets object
+ */
+function getSheetByName(name) {
+  return SpreadsheetApp.getActive().getSheetByName(name);
+}
 
-function ensureSheet_(name, header) {
+/**
+ * Ensure sheet exists, create if missing with optional header
+ * @param {string} name - Sheet name
+ * @param {Array<string>} header - Optional header row
+ * @returns {Sheet} Google Sheets object
+ */
+function ensureSheet(name, header) {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(name);
   if (!sh) {
@@ -19,57 +32,87 @@ function ensureSheet_(name, header) {
 }
 
 /*************** TIME AND COOLDOWNS***************/
-function coerceDate_(val) {
+/**
+ * Coerce value to Date object
+ * @param {*} val - Value to coerce (Date, string, or other)
+ * @returns {Date|null} Date object or null if invalid
+ */
+function coerceDate(val) {
   if (!val) return null;
   if (Object.prototype.toString.call(val) === '[object Date]') return val;
   const dt = new Date(String(val));
   return isNaN(dt.getTime()) ? null : dt;
 }
 
-function fmtTs_(){ return Utilities.formatDate(new Date(), DEFAULT_TZ, 'yyyy-MM-dd HH:mm:ss'); }
+/**
+ * Format current timestamp in DEFAULT_TZ
+ * @returns {string} Formatted timestamp (yyyy-MM-dd HH:mm:ss)
+ */
+function formatTimestamp(){ return Utilities.formatDate(new Date(), DEFAULT_TZ, 'yyyy-MM-dd HH:mm:ss'); }
 
-function tsMs_(m) {
-  // Prefer edited_timestamp, fall back to timestamp; 0 if missing
+/**
+ * Extract timestamp in milliseconds from Discord message
+ * Prefers edited_timestamp over timestamp
+ * @param {Object} m - Discord message object
+ * @returns {number} Timestamp in milliseconds, or 0 if missing
+ */
+function getTimestampMs(m) {
   var t = (m && (m.edited_timestamp || m.timestamp)) || 0;
   var n = Date.parse(t);
   return isNaN(n) ? 0 : n;
 }
 
-function nowMs_(){ return Date.now(); }
+/**
+ * Get current time in milliseconds
+ * @returns {number} Current timestamp
+ */
+function getNowMs(){ return Date.now(); }
 
-function jitterMs_() {
+/**
+ * Generate random jitter delay in milliseconds
+ * @returns {number} Random ms between FETCH_JITTER_MS_MIN and FETCH_JITTER_MS_MAX
+ */
+function getJitterMs() {
   return Math.floor(Math.random() * (FETCH_JITTER_MS_MAX - FETCH_JITTER_MS_MIN + 1)) + FETCH_JITTER_MS_MIN;
 }
 
-function isQuotaCooldown_() {
+/**
+ * Check if relay is in quota cooldown period
+ * @returns {boolean} True if in cooldown
+ */
+function isQuotaCooldown() {
   var props = PropertiesService.getScriptProperties();
   var until = Number(props.getProperty('QUOTA_COOLDOWN_UNTIL') || 0);
-  return nowMs_() < until;
+  return getNowMs() < until;
 }
 
-function startQuotaCooldown_(minutes) {
+/**
+ * Start quota cooldown period (skip relay calls)
+ * @param {number} minutes - Duration of cooldown in minutes
+ */
+function startQuotaCooldown(minutes) {
   var props = PropertiesService.getScriptProperties();
-  var until = nowMs_() + (minutes * 60 * 1000);
+  var until = getNowMs() + (minutes * 60 * 1000);
   props.setProperty('QUOTA_COOLDOWN_UNTIL', String(until));
 }
 
-function bumpPollCounter_() {
+function bumpPollCounter() {
   var props = PropertiesService.getScriptProperties();
   var n = Number(props.getProperty('POLL_COUNTER') || 0) + 1;
   props.setProperty('POLL_COUNTER', String(n));
   return n;
 }
 
-function shouldFetchRecentPage_() {
-  var n = bumpPollCounter_();
+function shouldFetchRecentPage() {
+  var n = bumpPollCounter();
   return (n % RECENT_PAGE_EVERY_N) === 0; // every Nth poll
 }
 
 /*************** CURSORS***************/
 // Use your consolidated helpers if present; otherwise fall back to a simple LAST_ID_* key.
-function _getScoresCursorSafe_() {
+function getScoresCursorSafe() {
   try {
-    if (typeof getCursor_ === 'function') return String(getCursor_(SCORES_CHANNEL_ID) || '');
+    if (typeof getCursor === 'function') return String(getCursor(SCORES_CHANNEL_ID) || '');
   } catch(_) {}
   const props = PropertiesService.getScriptProperties();
   // Prefer canonical LAST_ID_<channel>, but also check legacy SCORES_LAST_
@@ -77,10 +120,10 @@ function _getScoresCursorSafe_() {
          props.getProperty('SCORES_LAST_' + SCORES_CHANNEL_ID) || '';
 }
 
-function _setScoresCursorSafe_(id) {
-  if (!id) return _clearScoresCursorSafe_();
+function setScoresCursorSafe(id) {
+  if (!id) return clearScoresCursorSafe();
   try {
-    if (typeof setCursor_ === 'function') return setCursor_(SCORES_CHANNEL_ID, String(id));
+    if (typeof setCursor === 'function') return setCursor(SCORES_CHANNEL_ID, String(id));
   } catch(_) {}
   const props = PropertiesService.getScriptProperties();
   props.setProperty('LAST_ID_' + SCORES_CHANNEL_ID, String(id));
@@ -88,7 +131,7 @@ function _setScoresCursorSafe_(id) {
   props.deleteProperty('SCORES_LAST_' + SCORES_CHANNEL_ID);
 }
 
-function _clearScoresCursorSafe_() {
+function clearScoresCursorSafe() {
   try {
     if (typeof ADMIN_ResetCursor === 'function') {
       ADMIN_ResetCursor(SCORES_CHANNEL_ID); // your admin helper, if present
@@ -100,33 +143,33 @@ function _clearScoresCursorSafe_() {
   props.deleteProperty('SCORES_LAST_' + SCORES_CHANNEL_ID);
 }
 
-function cursorKey_(channelId) {
+function getCursorKey(channelId) {
   var id = String(channelId || '').trim();
   var base = CURSOR_PREFIX + id;
   return CURSOR_NAMESPACE ? (CURSOR_NAMESPACE + base) : base;
 }
 
-function legacyCursorKey_(channelId) {
+function getLegacyCursorKey(channelId) {
   var id = String(channelId || '').trim();
   var base = LEGACY_CURSOR_PREFIX + id;
   return CURSOR_NAMESPACE ? (CURSOR_NAMESPACE + base) : base;
 }
 
 // Read cursor with auto-migration from legacy keys
-function getCursor_(channelId) {
+function getCursor(channelId) {
   var props = PropertiesService.getScriptProperties();
-  var key   = cursorKey_(channelId);
+  var key   = getCursorKey(channelId);
   var val   = props.getProperty(key);
   if (val) return String(val);
 
   // try legacy key(s)
-  var legacyKey = legacyCursorKey_(channelId);
+  var legacyKey = getLegacyCursorKey(channelId);
   var legacyVal = props.getProperty(legacyKey);
   if (legacyVal) {
     // migrate: copy to canonical and delete legacy
     props.setProperty(key, String(legacyVal));
     props.deleteProperty(legacyKey);
-    log_('INFO','Migrated legacy cursor', { from: legacyKey, to: key, value: legacyVal });
+    log('INFO','Migrated legacy cursor', { from: legacyKey, to: key, value: legacyVal });
     return String(legacyVal);
   }
 
@@ -136,19 +179,19 @@ function getCursor_(channelId) {
   if (rawVal) {
     props.setProperty(key, String(rawVal));
     props.deleteProperty(rawFallback);
-    log_('INFO','Migrated raw cursor', { from: rawFallback, to: key, value: rawVal });
+    log('INFO','Migrated raw cursor', { from: rawFallback, to: key, value: rawVal });
     return String(rawVal);
   }
   return '';
 }
 
-function setCursor_(channelId, snowflake) {
+function setCursor(channelId, snowflake) {
   var props = PropertiesService.getScriptProperties();
-  var key = cursorKey_(channelId);
+  var key = getCursorKey(channelId);
   props.setProperty(key, String(snowflake || ''));
 }
 
-function listAllCursors_() {
+function listAllCursors() {
   var props = PropertiesService.getScriptProperties();
   var all = props.getProperties();
   var rows = [];
@@ -163,33 +206,33 @@ function listAllCursors_() {
 }
 
 function ADMIN_ShowCursors() {
-  var rows = listAllCursors_();
-  log_('INFO','Script cursors', { count: rows.length, rows: rows });
+  var rows = listAllCursors();
+  log('INFO','Script cursors', { count: rows.length, rows: rows });
   return rows;
 }
 
 function ADMIN_ResetCursor(channelId) {
   var props = PropertiesService.getScriptProperties();
-  props.deleteProperty(cursorKey_(channelId));
-  props.deleteProperty(legacyCursorKey_(channelId));
+  props.deleteProperty(getCursorKey(channelId));
+  props.deleteProperty(getLegacyCursorKey(channelId));
   // also nuke un-namespaced variants, just in case
   props.deleteProperty(CURSOR_PREFIX + channelId);
   props.deleteProperty(LEGACY_CURSOR_PREFIX + channelId);
-  log_('INFO','Cursor(s) cleared for channel', { channelId: String(channelId) });
+  log('INFO','Cursor(s) cleared for channel', { channelId: String(channelId) });
 }
 
 
 /*************** SAFE VALUES ***************/
 // Safe batch writer: no-ops if rows is empty
-function safeSetValues_(sheet, startRow, startCol, rows, labelOpt) {
+function safeSetValues(sheet, startRow, startCol, rows, labelOpt) {
   var label = String(labelOpt || 'batch');
   if (!rows || !rows.length) {
-    log_('INFO', 'safeSetValues_ no-op (empty rows)', { label: label, sheet: sheet.getName() });
+    log('INFO', 'safeSetValues no-op (empty rows)', { label: label, sheet: sheet.getName() });
     return 0;
   }
   var width = (rows[0] && rows[0].length) || 0;
   if (!width) {
-    log_('INFO', 'safeSetValues_ no-op (zero width)', { label: label, sheet: sheet.getName() });
+    log('INFO', 'safeSetValues no-op (zero width)', { label: label, sheet: sheet.getName() });
     return 0;
   }
   sheet.getRange(startRow, startCol, rows.length, width).setValues(rows);
@@ -197,7 +240,7 @@ function safeSetValues_(sheet, startRow, startCol, rows, labelOpt) {
 }
 
 /*************** LOGGING ***************/
-function log_(level, msg, data) {
+function log(level, msg, data) {
   try {
     const ss = SpreadsheetApp.getActive();
     let sh = ss.getSheetByName('_DiscordScoresLog');
@@ -211,7 +254,7 @@ function log_(level, msg, data) {
   } catch (_){}
 }
 
-function _makeCounters_() {
+function makeCounters() {
   return {
     seen: 0,               // messages iterated this run
     parsedOK: 0,           // messages that parsed into a score object
@@ -229,7 +272,7 @@ function _makeCounters_() {
   };
 }
 
-function _postRunSummary_(whereChannelId, ctx, cnt) {
+function postRunSummary(whereChannelId, ctx, cnt) {
   // Build a compact, readable line for Discord
   const secs = Math.round((ctx.durationMs || 0)/1000);
   const head = (ctx.kind === 'pollFromId')
@@ -263,12 +306,18 @@ function _postRunSummary_(whereChannelId, ctx, cnt) {
   const line = `${head}${cursorBit}${windowBit} • ${parts.join(' • ')} • ${secs}s`;
 
   // Log to Google Sheets logs
-  log_('INFO','PollSummary', { ctx, cnt, line });
+  log('INFO','PollSummary', { ctx, cnt, line });
 }
 
 
 /*************** TEXT MANIPULATION AND COMPARISON ***************/
-function stripEmojis_(text, opts) {
+/**
+ * Strip Discord emojis from text (custom, shortcodes, unicode)
+ * @param {string} text - Input text with emojis
+ * @param {Object} opts - Options: { collapse: boolean }
+ * @returns {string} Text with emojis removed
+ */
+function stripEmojis(text, opts) {
   if (!text) return '';
   let s = String(text);
   s = s.replace(/<a?:[A-Za-z0-9_]+:\d+>/g, '');                    // <:name:id> / <a:name:id>
@@ -280,19 +329,28 @@ function stripEmojis_(text, opts) {
   return s;
 }
 
-// Trim BOTH ends, preserve inner spaces; also remove invisible spaces, return UPPERCASE
-function sanitizeTeamToken_(raw) {
+/**
+ * Sanitize team name token: strip emojis, remove invisible spaces, uppercase
+ * @param {string} raw - Raw team name from Discord
+ * @returns {string} Sanitized UPPERCASE team token
+ */
+function sanitizeTeamToken(raw) {
   if (!raw) return '';
-  let t = stripEmojis_(String(raw), { collapse:false });
+  let t = stripEmojis(String(raw), { collapse:false });
   t = t.replace(/[\u00A0\u1680\u180E\u2000-\u200A\u202F\u205F\u3000\u200B-\u200D\uFEFF]/g, ' ');
   t = t.replace(/^\s+|\s+$/g, ''); // both ends
   return t.toUpperCase();
 }
 
-function normalizeMapToken_(raw) {
+/**
+ * Normalize map token to canonical dod_* format using aliases
+ * @param {string} raw - Raw map token (may include or omit dod_ prefix)
+ * @returns {string} Canonical map name (e.g., "dod_railyard_b6") or empty string
+ */
+function normalizeMapToken(raw) {
   if (!raw) return '';
   const token = String(raw).trim().toLowerCase().replace(/^dod_/, ''); // accept dod_ optional
-  const aliases = buildCanonMapAliases_();
+  const aliases = buildCanonMapAliases();
 
   // Try alias table with/without dod_
   const direct = aliases[token] || aliases['dod_' + token];
@@ -301,43 +359,48 @@ function normalizeMapToken_(raw) {
   // Reparse/debug fallback (optional)
   if (ALLOW_UNKNOWN_DOD_MAPS) {
     const guess = token.startsWith('dod_') ? token : ('dod_' + token);
-    if (/^dod_[a-z0-9_]+$/.test(guess)) return guess;
+    if (DOD_MAP_PATTERN.test(guess)) return guess;
   }
   return '';
 }
 
-function normalizeTeamName_(raw) {
-  let cleanedUpper = sanitizeTeamToken_(raw).toUpperCase();
+/**
+ * Normalize team name: handle aliases, "THE" prefix, placeholders
+ * @param {string} raw - Raw team name from Discord
+ * @returns {string} Canonical UPPERCASE team name, '__PLACEHOLDER__', or '__AMBIG_ALIAS__:...'
+ */
+function normalizeTeamName(raw) {
+  let cleanedUpper = sanitizeTeamToken(raw).toUpperCase();
   if (!cleanedUpper) return '';
 
-  // NEW: treat placeholder teams as a special token (they will be skipped later)
-  if (isPlaceholderTeamAnyDiv_(cleanedUpper)) return '__PLACEHOLDER__';
+  // Treat placeholder teams as special token (skipped later)
+  if (isPlaceholderTeamAnyDiv(cleanedUpper)) return PLACEHOLDER_TOKEN;
 
-  // NEW: accept "THE WICKEDS" as "WICKEDS" (still falls back to aliases/canon)
+  // Accept "THE WICKEDS" as "WICKEDS"
   if (cleanedUpper.startsWith('THE ')) {
     const noThe = cleanedUpper.replace(/^THE\s+/, '');
-    cleanedUpper = noThe || cleanedUpper; // prefer without THE if non-empty
+    cleanedUpper = noThe || cleanedUpper;
   }
 
   // Canonical exact match?
-  const canon = getCanonicalTeamMap_();
+  const canon = getCanonicalTeamMap();
   if (canon[cleanedUpper]) return cleanedUpper;
 
   // Alias lookup
-  const aliases = loadAliases_(); // alias -> [canon...]
+  const aliases = loadAliases();
   const ali = aliases[cleanedUpper];
   if (ali && ali.length === 1) return ali[0];
-  if (ali && ali.length > 1)   return '__AMBIG_ALIAS__:' + cleanedUpper;
+  if (ali && ali.length > 1)   return AMBIGUOUS_ALIAS_PREFIX + ':' + cleanedUpper;
 
-  return cleanedUpper; // fallback: will be validated later
+  return cleanedUpper; // fallback: validated later
 }
 
-function isPlaceholderTeamAnyDiv_(teamUpper) {
+function isPlaceholderTeamAnyDiv(teamUpper) {
   // Matches: "GOLD A", "SILVER Z", "BRONZE I" — any case in input, already uppercased here.
   return /^\s*(BRONZE|SILVER|GOLD)\s+[A-Z]\s*$/.test(String(teamUpper || '').toUpperCase());
 }
 
-function isPlaceholderTeamForDiv_(teamUpper, divisionUpper) {
+function isPlaceholderTeamForDiv(teamUpper, divisionUpper) {
   // Use when you know the division (e.g., inside applyScoresToRow_)
   const d = String(divisionUpper || '').toUpperCase();
   const t = String(teamUpper || '').toUpperCase();
@@ -357,7 +420,7 @@ function maxSnowflake(a, b) {
 }
 
 /*************** HASHING AND CACHING ***************/
-function computeContentHash_(content) {
+function computeContentHash(content) {
   return Utilities.base64EncodeWebSafe(
     Utilities.computeDigest(
       Utilities.DigestAlgorithm.SHA_256,
@@ -368,7 +431,7 @@ function computeContentHash_(content) {
 
 let __TEAM_CANON_CACHE = null;
 
-function getCanonicalTeamMap_() {
+function getCanonicalTeamMap() {
   if (__TEAM_CANON_CACHE) return __TEAM_CANON_CACHE;
   const map = {};
   for (const sheetName of DIVISION_SHEETS) {
@@ -388,7 +451,7 @@ function getCanonicalTeamMap_() {
 // ---- Division-first canonical maps -----------------------------------------
 let __DIV_CANON_MAPS = null; // Set<string> lowercased "dod_*" from BRONZE/SILVER/GOLD col A
 
-function loadDivisionCanonicalMaps_() {
+function loadDivisionCanonicalMaps() {
   if (__DIV_CANON_MAPS) return __DIV_CANON_MAPS;
 
   const ss = SpreadsheetApp.getActive();
@@ -420,7 +483,7 @@ function loadDivisionCanonicalMaps_() {
 
 let __TEAM_ALIAS_CACHE = null;
 
-function loadAliases_() {
+function loadAliases() {
   if (__TEAM_ALIAS_CACHE) return __TEAM_ALIAS_CACHE;
 
   const mapMulti = {}; // ALIAS (UPPER) -> Set of CANON (UPPER)
@@ -455,7 +518,7 @@ function loadAliases_() {
 
 let __MAP_ALIAS_CACHE = null;
 
-function loadMapAliases_() {
+function loadMapAliases() {
   if (__MAP_ALIAS_CACHE) return __MAP_ALIAS_CACHE;
 
   const out = {}; // alias(lower) -> dod_* (lower)
@@ -485,14 +548,14 @@ function loadMapAliases_() {
   return out;
 }
 
-function isCanonTeam_(upperName) {
-  const canon = getCanonicalTeamMap_();
+function isCanonTeam(upperName) {
+  const canon = getCanonicalTeamMap();
   return !!canon[String(upperName || '')];
 }
 
 let __CANON_MAPS = null;
 
-function loadCanonicalMaps_() {
+function loadCanonicalMaps() {
   if (__CANON_MAPS) return __CANON_MAPS;
   const sh = SpreadsheetApp.getActive().getSheetByName(GENERAL_SHEET);
   if (!sh) return (__CANON_MAPS = new Set());
@@ -521,7 +584,7 @@ let __CANON_MAP_ALIASES = null;
  * Preference rule: if both base (dod_lennon2) and suffixed (dod_lennon2_b1)
  * exist, we prefer the base as the canonical.
  */
-function buildCanonMapAliases_() {
+function buildCanonMapAliases() {
   if (__CANON_MAP_ALIASES) return __CANON_MAP_ALIASES;
 
   const table = {}; // alias(lower) -> canonical(lower)
@@ -535,7 +598,7 @@ function buildCanonMapAliases_() {
   }
 
   // 1) Division-derived canonicals (primary)
-  const divSet = loadDivisionCanonicalMaps_();
+  const divSet = loadDivisionCanonicalMaps();
   const divCanon = Array.from(divSet);
 
   // Prefer base over suffixed: if a base and a suffixed with same base exist, keep base canonical
@@ -549,14 +612,14 @@ function buildCanonMapAliases_() {
   }
 
   // 2) Admin overrides (_MapAliases) — these WIN
-  const admin = loadMapAliases_(); // alias -> canonical (may be empty)
+  const admin = loadMapAliases(); // alias -> canonical (may be empty)
   for (const [a, c] of Object.entries(admin)) {
     const canon = c.toLowerCase().startsWith('dod_') ? c.toLowerCase() : 'dod_' + c.toLowerCase();
     table[a.toLowerCase()] = canon; // explicit override
   }
 
   // 3) Fallback to General list only for missing aliases
-  const gen = (function loadCanonicalMaps_() {
+  const gen = (function loadCanonicalMaps() {
     if (typeof __CANON_MAPS !== 'undefined' && __CANON_MAPS) return __CANON_MAPS;
     const sh = SpreadsheetApp.getActive().getSheetByName('General');
     const out = new Set();
@@ -586,7 +649,11 @@ function buildCanonMapAliases_() {
 }
 
 /*************** RECEIPTS HELPERS ***************/
-function receiptsSheet_() {
+// Receipt cache for performance optimization
+let __RECEIPT_CACHE = null;
+let __RECEIPT_MSGID_CACHE = null;
+
+function getReceiptsSheet() {
   const sh = ensureSheet_(RECEIPTS_SHEET, [
     'Time','Division','Row','Map','TeamC','TeamG','ScoreC','ScoreG','MsgId','AuthorId','Note','ContentHash','EditedTS'
   ]);
@@ -594,44 +661,87 @@ function receiptsSheet_() {
   return sh;
 }
 
-function receiptKey_(division, row) { return `${division}|${row}`; }
+function getReceiptKey(division, row) { return `${division}|${row}`; }
 
-function findExistingReceipt_(division, row) {
-  const sh = receiptsSheet_();
+/**
+ * Load receipt cache from sheet (optimizes repeated lookups)
+ * @returns {Map<string, Object>} Map of receipt key to receipt data
+ */
+function loadReceiptCache() {
+  if (__RECEIPT_CACHE) return __RECEIPT_CACHE;
+
+  const sh = getReceiptsSheet();
   const last = sh.getLastRow();
-  if (last < 2) return null;
-  const data = sh.getRange(2,1,last-1,11).getValues();
-  for (let i = data.length-1; i>=0; i--) {
-    const [time, div, r, map, tC, tG, sC, sG, msgId, authorId, note] = data[i];
-    if (String(div) === String(division) && Number(r) === Number(row)) {
-      return { time, division:div, row:r, map, tC, tG, sC:Number(sC), sG:Number(sG), msgId:String(msgId||''), authorId:String(authorId||''), note:String(note||'') };
-    }
+  if (last < 2) {
+    __RECEIPT_CACHE = new Map();
+    __RECEIPT_MSGID_CACHE = new Map();
+    return __RECEIPT_CACHE;
   }
-  return null;
+
+  const data = sh.getRange(2, 1, last - 1, 13).getValues();
+  const divRowCache = new Map();
+  const msgIdCache = new Map();
+
+  for (const row of data) {
+    const [time, div, r, map, tC, tG, sC, sG, msgId, authorId, note, contentHash, editedTs] = row;
+    const key = `${div}|${r}`;
+    const receipt = {
+      time,
+      division: String(div),
+      row: Number(r),
+      map,
+      tC,
+      tG,
+      sC: Number(sC),
+      sG: Number(sG),
+      msgId: String(msgId || ''),
+      authorId: String(authorId || ''),
+      note: String(note || ''),
+      contentHash: String(contentHash || ''),
+      editedTs: String(editedTs || '')
+    };
+    divRowCache.set(key, receipt);
+    if (msgId) msgIdCache.set(String(msgId), receipt);
+  }
+
+  __RECEIPT_CACHE = divRowCache;
+  __RECEIPT_MSGID_CACHE = msgIdCache;
+  return divRowCache;
 }
 
-function writeReceipt_(division, row, map, tC, tG, sC, sG, msgId, authorId, note, contentHash, editedTs) {
-  var sh = receiptsSheet_();
+/**
+ * Invalidate receipt cache (call after writing new receipts)
+ */
+function invalidateReceiptCache() {
+  __RECEIPT_CACHE = null;
+  __RECEIPT_MSGID_CACHE = null;
+}
+
+function findExistingReceipt(division, row) {
+  const cache = loadReceiptCache();
+  const key = getReceiptKey(division, row);
+  return cache.get(key) || null;
+}
+
+function writeReceipt(division, row, map, tC, tG, sC, sG, msgId, authorId, note, contentHash, editedTs) {
+  var sh = getReceiptsSheet();
   sh.appendRow([new Date(), division, row, map, tC, tG, sC, sG, msgId, authorId, note||'', contentHash||'', editedTs||'']);
+  // Invalidate cache after write
+  invalidateReceiptCache();
 }
 
-function findReceiptByMsgId_(msgId) {
-  const sh = receiptsSheet_();
-  const last = sh.getLastRow();
-  if (last < 2) return null;
-  // Assuming receipts header: Time,Division,Row,Map,TeamC,TeamG,ScoreC,ScoreG,MsgId,AuthorId,Note,ContentHash,EditedTS
-  const w = Math.min(sh.getLastColumn(), 13); // tolerate older sheets
-  const rows = sh.getRange(2,1,last-1,w).getValues();
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const r = rows[i];
-    if (String(r[8]) === String(msgId)) { // MsgId is column 9 (0-based index 8)
-      return {
-        division: String(r[1]||''),
-        row: Number(r[2]||0),
-        contentHash: String(r[11]||''),
-        editedTs: String(r[12]||'')
-      };
-    }
-  }
-  return null;
+function findReceiptByMsgId(msgId) {
+  // Use cache for fast lookup
+  loadReceiptCache(); // ensure both caches are populated
+  if (!__RECEIPT_MSGID_CACHE) return null;
+
+  const receipt = __RECEIPT_MSGID_CACHE.get(String(msgId));
+  if (!receipt) return null;
+
+  return {
+    division: receipt.division,
+    row: receipt.row,
+    contentHash: receipt.contentHash,
+    editedTs: receipt.editedTs
+  };
 }

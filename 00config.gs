@@ -5,9 +5,16 @@
  * - Writes ONLY W/L (B,F) and scores (D,H)
  * - Adds :ktp: and ✅ reactions, logs success/failure, DMs author on unknown team names
  * - Written in conjunction with chat GPT while I have a newborn so this code is janky AF I can only apologize. It works.
- * - Version 1.0 Deployed at the Start of Season 8 in 2025. Version 2.0 Deployed 10/14/2025
  * - Uses a discord relay (See https://github.com/afraznein/KTPDiscordRelay) to bypass Cloudflare issues.
+ *
+ * Version History:
+ *   v1.0 - Deployed at the Start of Season 8 in 2025
+ *   v2.0 - Deployed 10/14/2025
+ *   v2.1 - Code optimization: camelCase refactor, batch operations, constants extraction (10/31/2025)
  ***********************************************************************/
+
+// Version
+const VERSION = '2.1.0';
 
 /*************** DEBUG ***************/
 const REPARSE_FORCE = true;
@@ -110,6 +117,18 @@ var RUNTIME_SAFETY_BUFFER = 10 * 1000;     // stop ~10s early to finish cleanly
 var QUOTA_BACKOFF_MINUTES = 15;   // skip polls for this long after an error
 var RECENT_PAGE_EVERY_N    = 1;   // only fetch the "recent page" every N polls
 
-// (optional) jitter so multiple sheets don’t all hit the relay at once
+// (optional) jitter so multiple sheets don't all hit the relay at once
 var FETCH_JITTER_MS_MIN = 150;
 var FETCH_JITTER_MS_MAX = 600;
+
+/*************** MAGIC CONSTANTS ***************/
+// Special token prefixes
+const PLACEHOLDER_TOKEN = '__PLACEHOLDER__';
+const AMBIGUOUS_ALIAS_PREFIX = '__AMBIG_ALIAS__';
+
+// Validation patterns
+const SNOWFLAKE_PATTERN = /^\d{17,19}$/;  // Discord snowflake IDs are 17-19 digits
+const DOD_MAP_PATTERN = /^dod_[a-z0-9_]+$/;
+
+// Batch operation limits
+const MAX_BATCH_WRITE_ROWS = 1000;  // Google Sheets API limit

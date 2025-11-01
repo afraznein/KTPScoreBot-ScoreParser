@@ -1,5 +1,16 @@
 /*************** WEEKLY BANNER HELPERS ***************/
-function _disp_(a1) {
+/**
+ * Get display value from A1 notation
+ * Supports both "A1" (defaults to 'KTP Info' sheet) and "SheetName!A1" format
+ *
+ * @param {string} a1 - A1 notation (e.g., "B5" or "BRONZE!A28")
+ * @returns {string} Display value from the specified cell, or empty string if sheet/range invalid
+ *
+ * @example
+ * getDisplayValue("KTP Info!B5")  // "Keep the Practice"
+ * getDisplayValue("A1")           // Value from 'KTP Info' sheet A1
+ */
+function getDisplayValue(a1) {
   var ss = SpreadsheetApp.getActive();
   var t = String(a1||'').trim();
   var sh = ss.getSheetByName(t.includes('!') ? t.split('!')[0] : 'KTP Info');
@@ -8,101 +19,60 @@ function _disp_(a1) {
   return String(sh.getRange(rng).getDisplayValue() || '').trim();
 }
 
-function _looksLikeMap_(s) {
+/**
+ * Validate if string looks like a DoD map token
+ * Automatically prepends "dod_" if missing
+ *
+ * @param {string} s - Potential map token (e.g., "lennon2" or "dod_railyard_b6")
+ * @returns {boolean} True if matches DoD map pattern (dod_[alphanumeric_])
+ *
+ * @example
+ * looksLikeMap("lennon2")         // true (becomes "dod_lennon2")
+ * looksLikeMap("dod_railyard_b6") // true
+ * looksLikeMap("invalid!")        // false
+ */
+function looksLikeMap(s) {
   s = String(s||'').trim().toLowerCase();
   if (!s) return false;
   if (!s.startsWith('dod_')) s = 'dod_' + s;
-  return /^dod_[a-z0-9_]+$/.test(s);
+  return DOD_MAP_PATTERN.test(s);
 }
 
-function _looksLikeMapDod_(s) {
+/**
+ * Validate if string looks like a DoD map token (alias of looksLikeMap)
+ * @param {string} s - Potential map token
+ * @returns {boolean} True if matches DoD map pattern
+ */
+function looksLikeMapDod(s) {
   s = String(s||'').trim().toLowerCase();
   if (!s) return false;
   if (!s.startsWith('dod_')) s = 'dod_' + s;
-  return /^dod_[a-z0-9_]+$/.test(s);
+  return DOD_MAP_PATTERN.test(s);
 }
 
-// Potentially delete if get getActiveWeekAndMapFromSchedule is removed
-// Return [{top,height,map,weekIndex,sheet}] using column A headers (A28,A39,A50…)
-function _scanDivisionBlocks_(sheetName) {
-  var ss = SpreadsheetApp.getActive();
-  var sh = ss.getSheetByName(sheetName);
-  var out = [];
-  if (!sh) return out;
-
-  var last = sh.getLastRow();
-  if (last < 1) return out;
-
-  var colVals = sh.getRange(1, MAP_HEADER_COLUMN, last, 1).getValues().map(r => String(r[0]||'').trim());
-  var headerRows = [];
-  for (var r = 1; r <= last; r++) {
-    if (_looksLikeMap_(colVals[r-1])) headerRows.push(r);
-  }
-  if (!headerRows.length) return out;
-
-  for (var i=0;i<headerRows.length;i++){
-    var top = headerRows[i];
-    var nextTop = (i+1 < headerRows.length) ? headerRows[i+1] : (top + DEFAULT_BLOCK_HEIGHT);
-    var height = Math.max(1, Math.min(last, nextTop - top));
-    var raw = colVals[top-1].toLowerCase();
-    var canonical = normalizeMapToken_(raw);     // <- use your parser’s normalizer
-    if (!canonical) {
-      // fallback to strict dod_* if normalizer is strict:
-      canonical = raw.startsWith('dod_') ? raw : ('dod_' + raw);
-    }
-    out.push({ top: top, height: height, map: canonical, weekIndex: (i+1), sheet: sh });
-  }
-  return out;
-}
-
-//Potentially delete if get getActiveWeekAndMapFromSchedule is removed
-// True if any match row under this block is unscored
-function _blockHasUnscored_(block) {
-  var sh = block.sheet;
-  var start = block.top + 1;
-  var end = Math.min(sh.getLastRow(), block.top + block.height - 1);
-  if (end < start) return false;
-
-  var n = end - start + 1;
-  // Use your D/H columns (4 and 8)
-  var cVals = sh.getRange(start, COL_T1_SC, n, 1).getValues();
-  var gVals = sh.getRange(start, COL_T2_SC, n, 1).getValues();
-
-  for (var i = 0; i < n; i++) {
-    var s1 = String(cVals[i][0] || '').trim();
-    var s2 = String(gVals[i][0] || '').trim();
-    if (s1 === '' && s2 === '') return true; // at least one unscored row in this block
-  }
-  return false;
-}
-
-//Potentially delete
-function _blockHasAnyScore_(block) {
-  var sh = block.sheet;
-  var start = block.top + 1;
-  var end = Math.min(sh.getLastRow(), block.top + block.height - 1);
-  if (end < start) return false;
-
-  var n = end - start + 1;
-  var cVals = sh.getRange(start, COL_T1_SC, n, 1).getValues();
-  var gVals = sh.getRange(start, COL_T2_SC, n, 1).getValues();
-  for (var i = 0; i < n; i++) {
-    var s1 = String(cVals[i][0] || '').trim();
-    var s2 = String(gVals[i][0] || '').trim();
-    if (s1 !== '' || s2 !== '') return true; // any score recorded in this block
-  }
-  return false;
-}
-
-// Next week = min( max weekIndex that HAS ANY score + 1, dynamic maxWeeks ).
-// Map = plurality of column-A headers at that week across BRONZE/SILVER/GOLD.
-// If nothing scored yet → nextWeek = 1. If a division lacks that week header, we skip it.
-function getNextWeekAndMapFromSchedule_() {
+/**
+ * Determine next week number and map from division schedules
+ * Strategy: Find highest week with any scores across all divisions, then next week = maxScored + 1
+ * Map is chosen by plurality voting across divisions for that week
+ *
+ * Algorithm:
+ * 1. Scan all divisions to find highest week index with any score
+ * 2. Next week = min(maxWeeks, maxScored + 1) [defaults to week 1 if nothing scored]
+ * 3. Read map headers from column A for that week across divisions
+ * 4. Pick most common map (plurality vote); skip divisions lacking that many weeks
+ *
+ * @returns {Object|null} { weekNumber, map, sourceSheetName } or null if no usable data
+ *
+ * @example
+ * getNextWeekAndMapFromSchedule()
+ * // Returns: { weekNumber: 3, map: "dod_railyard_b6", sourceSheetName: "SILVER" }
+ */
+function getNextWeekAndMapFromSchedule() {
   var ss = SpreadsheetApp.getActive();
   var divs = (typeof DIVISION_SHEETS !== 'undefined' && DIVISION_SHEETS.length)
     ? DIVISION_SHEETS : ['BRONZE','SILVER','GOLD'];
 
-  var maxWeeks = detectMaxWeeks_();
+  var maxWeeks = detectMaxWeeks();
 
   // 1) find highest week with ANY score across any division
   var maxScored = 0;
@@ -111,7 +81,7 @@ function getNextWeekAndMapFromSchedule_() {
     if (!sh) continue;
     var localMax = 0;
     for (var w = 1; w <= maxWeeks; w++) {
-      if (_weekHasAnyScore_(sh, w, maxWeeks)) localMax = w;
+      if (weekHasAnyScore(sh, w, maxWeeks)) localMax = w;
     }
     maxScored = Math.max(maxScored, localMax);
   }
@@ -126,11 +96,11 @@ function getNextWeekAndMapFromSchedule_() {
     if (!sh) continue;
 
     // if this division doesn't have that many weeks, skip
-    var divMax = _detectMaxWeeksForSheet_(sh);
+    var divMax = detectMaxWeeksForSheet(sh);
     if (nextWeek > divMax) continue;
 
-    var m = _readWeekMap_(sh, nextWeek);
-    if (_looksLikeMapDod_(m)) {
+    var m = readWeekMap(sh, nextWeek);
+    if (looksLikeMapDod(m)) {
       candidates.push({ sheet: d, map: m });
       mapCounts[m] = (mapCounts[m] || 0) + 1;
     }
@@ -148,74 +118,55 @@ function getNextWeekAndMapFromSchedule_() {
   };
 }
 
-//Potentially delete
-function _cellDisplay_(a1) {
-  var ss = SpreadsheetApp.getActive();
-  var s = String(a1||'').trim();
-  var shName, rng = s;
-  if (s.includes('!')) { shName = s.split('!')[0]; rng = s.split('!')[1]; }
-  var sh = ss.getSheetByName(shName || 'KTP Info');
-  if (!sh) return '';
-  return String(sh.getRange(rng).getDisplayValue() || '').trim();
-}
-
-// Aggregate the first "active" (has unscored) block across divisions.
-// If multiple divisions disagree, pick the minimum weekIndex and majority map.
-function getActiveWeekAndMapFromSchedule_() {
-  var seen = []; // {sheet, top, map, weekIndex, hasUnscored}
-  for (var d of DIVISION_SHEETS) {
-    var blocks = _scanDivisionBlocks_(d);
-    for (var b of blocks) {
-      b.hasUnscored = _blockHasUnscored_(b);
-      seen.push({ sheet:d, top:b.top, map:b.map, weekIndex:b.weekIndex, hasUnscored:b.hasUnscored });
-      if (b.hasUnscored) break; // take the first active block per sheet
-    }
-  }
-  if (!seen.length) return null;
-
-  // Filter to candidates that are active
-  var act = seen.filter(x=>x.hasUnscored);
-  if (!act.length) {
-    // fallback: take the highest weekIndex across sheets (latest header)
-    var all = seen.sort((a,b)=>a.weekIndex - b.weekIndex);
-    var last = all[all.length-1];
-    return { weekNumber: last.weekIndex, map: last.map, sourceSheet: last.sheet };
-  }
-
-  // Pick the minimum week index among active, then the most common map among those
-  var minWeek = Math.min.apply(null, act.map(x=>x.weekIndex));
-  var cand = act.filter(x=>x.weekIndex === minWeek);
-
-  // majority map
-  var countByMap = {};
-  for (var c of cand) countByMap[c.map] = (countByMap[c.map]||0)+1;
-  var bestMap = Object.keys(countByMap).sort((a,b)=>countByMap[b]-countByMap[a])[0];
-  var src = cand.find(x=>x.map===bestMap) || cand[0];
-
-  return { weekNumber: minWeek, map: bestMap, sourceSheet: src.sheet };
-}
-
-function _weekTopRow_(weekIndex) {
+/**
+ * Calculate sheet row number for week header (column A map cell)
+ * Uses constants: MAP_HEADER_FIRST_ROW and MAP_HEADER_ROW_STEP
+ *
+ * @param {number} weekIndex - Week number (1-based)
+ * @returns {number} Row number for this week's map header
+ *
+ * @example
+ * getWeekTopRow(1)  // 28 (if MAP_HEADER_FIRST_ROW=28)
+ * getWeekTopRow(2)  // 39 (if MAP_HEADER_ROW_STEP=11)
+ */
+function getWeekTopRow(weekIndex) {
   return MAP_HEADER_FIRST_ROW + (weekIndex - 1) * MAP_HEADER_ROW_STEP;
 }
 
-// Count how many **consecutive** week headers exist in column A for a sheet
-function _detectMaxWeeksForSheet_(sheet) {
+/**
+ * Count consecutive week headers in column A for a single sheet
+ * Stops at first non-map header or when row exceeds sheet bounds
+ *
+ * @param {Sheet} sheet - Google Sheets object (Bronze/Silver/Gold)
+ * @returns {number} Count of consecutive valid week headers (0 if none found)
+ *
+ * @example
+ * detectMaxWeeksForSheet(bronzeSheet)  // 8 (if 8 consecutive dod_* headers found)
+ */
+function detectMaxWeeksForSheet(sheet) {
   var last = sheet.getLastRow();
   var count = 0;
   for (var w = 1; ; w++) {
-    var top = _weekTopRow_(w);
+    var top = getWeekTopRow(w);
     if (top > last) break;
     var v = String(sheet.getRange(top, 1).getDisplayValue() || '').trim().toLowerCase();
     var m = v.startsWith('dod_') ? v : ('dod_' + v);
-    if (!_looksLikeMapDod_(m)) break;      // stop at first non-map header
+    if (!looksLikeMapDod(m)) break;      // stop at first non-map header
     count++;
   }
   return count; // 0 if none
 }
 
-// Max weeks across all divisions (dynamic each run)
-function detectMaxWeeks_() {
+/**
+ * Detect maximum weeks across all division sheets (dynamic count)
+ * Returns the highest week count found in any division
+ *
+ * @returns {number} Maximum weeks across Bronze/Silver/Gold divisions (minimum 1)
+ *
+ * @example
+ * detectMaxWeeks()  // 8 (if GOLD has 8 weeks, BRONZE has 6, SILVER has 7)
+ */
+function detectMaxWeeks() {
   var ss = SpreadsheetApp.getActive();
   var divs = (typeof DIVISION_SHEETS !== 'undefined' && DIVISION_SHEETS.length)
     ? DIVISION_SHEETS : ['BRONZE','SILVER','GOLD'];
@@ -224,25 +175,40 @@ function detectMaxWeeks_() {
   for (var d of divs) {
     var sh = ss.getSheetByName(d);
     if (!sh) continue;
-    maxW = Math.max(maxW, _detectMaxWeeksForSheet_(sh));
+    maxW = Math.max(maxW, detectMaxWeeksForSheet(sh));
   }
   return Math.max(1, maxW); // never less than 1
 }
 
-// Read the map token at the header row for (sheet, weekIndex); '' if invalid/missing
-function _readWeekMap_(sheet, weekIndex) {
-  var top = _weekTopRow_(weekIndex);
+/**
+ * Read map token from column A header for specific week
+ * Returns empty string if invalid or missing
+ *
+ * @param {Sheet} sheet - Google Sheets object
+ * @param {number} weekIndex - Week number (1-based)
+ * @returns {string} Canonical map name (e.g., "dod_railyard_b6") or empty string if invalid
+ */
+function readWeekMap(sheet, weekIndex) {
+  var top = getWeekTopRow(weekIndex);
   var v = String(sheet.getRange(top, 1).getDisplayValue() || '').trim().toLowerCase();
   if (!v) return '';
   var m = v.startsWith('dod_') ? v : ('dod_' + v);
-  return _looksLikeMapDod_(m) ? m : '';
+  return looksLikeMapDod(m) ? m : '';
 }
 
-// Does the block (week) have **any** score recorded?
-function _weekHasAnyScore_(sheet, weekIndex, maxWeeks) {
-  var top = _weekTopRow_(weekIndex);
+/**
+ * Check if weekly block has any scores recorded
+ * Examines match rows between this week's header and next week's header
+ *
+ * @param {Sheet} sheet - Google Sheets object
+ * @param {number} weekIndex - Week number (1-based)
+ * @param {number} maxWeeks - Total weeks in schedule (for boundary calculation)
+ * @returns {boolean} True if at least one match has scores in columns D or H
+ */
+function weekHasAnyScore(sheet, weekIndex, maxWeeks) {
+  var top = getWeekTopRow(weekIndex);
   // end row is the row before the next header; if last week, use step as height
-  var nextTop = (weekIndex < maxWeeks) ? _weekTopRow_(weekIndex + 1) : (top + MAP_HEADER_ROW_STEP);
+  var nextTop = (weekIndex < maxWeeks) ? getWeekTopRow(weekIndex + 1) : (top + MAP_HEADER_ROW_STEP);
   var end = Math.min(sheet.getLastRow(), nextTop - 1);
   if (end <= top) return false;
 
@@ -258,14 +224,27 @@ function _weekHasAnyScore_(sheet, weekIndex, maxWeeks) {
   return false;
 }
 
-//Used in pollers / parsers
-function isWeeklyScoresBanner_(s) {
+/**
+ * Detect if message content is a weekly scores banner (for deduplication in parsers)
+ * Checks for signature patterns: ":KTP:", "Week N", "Matches -", and rule line (===)
+ *
+ * @param {string} s - Message content to check
+ * @returns {boolean} True if message matches weekly banner signature
+ *
+ * @example
+ * isWeeklyScoresBanner(":KTP: Week 3 Matches - dod_lennon2\n======")  // true
+ */
+function isWeeklyScoresBanner(s) {
   s = String(s||'').trim();
   return /:KTP:/i.test(s) && /\bWeek\s+\d+\b/i.test(s) && /Matches\s*-\s*/i.test(s) && /={8,}/.test(s);
 }
 
-function createWeeklyBannerTrigger_() {
-  ScriptApp.newTrigger('postWeeklyScoresBanner_')
+/**
+ * Create time-based trigger for weekly banner posting
+ * Fires every Monday at 8:00 AM (requires project timezone = America/New_York)
+ */
+function createWeeklyBannerTrigger() {
+  ScriptApp.newTrigger('postWeeklyScoresBanner')
     .timeBased()
     .onWeekDay(ScriptApp.WeekDay.MONDAY)
     .atHour(8)         // Project must be set to America/New_York
@@ -273,28 +252,58 @@ function createWeeklyBannerTrigger_() {
     .create();
 }
 
-function deleteWeeklyBannerTriggers_() {
+/**
+ * Delete all time-based triggers for weekly banner posting
+ * Removes all triggers with handler function 'postWeeklyScoresBanner'
+ */
+function deleteWeeklyBannerTriggers() {
   var all = ScriptApp.getProjectTriggers();
-  for (var t of all) if (t.getHandlerFunction() === 'postWeeklyScoresBanner_') ScriptApp.deleteTrigger(t);
+  for (var t of all) if (t.getHandlerFunction() === 'postWeeklyScoresBanner') ScriptApp.deleteTrigger(t);
 }
 
+/**
+ * UI wrapper: Create weekly banner trigger (menu item)
+ */
 function createBannerTrigger(){
-  createWeeklyBannerTrigger_();
+  createWeeklyBannerTrigger();
 }
 
+/**
+ * UI wrapper: Delete weekly banner triggers (menu item)
+ */
 function deleteBannerTrigger(){
-  deleteWeeklyBannerTriggers_();
+  deleteWeeklyBannerTriggers();
 }
 
+/**
+ * UI wrapper: Manually post weekly banner (for testing/debugging)
+ */
 function manuallyPostWeeklyScoresBanner(){
-  postWeeklyScoresBanner_();
+  postWeeklyScoresBanner();
 }
 
-function postWeeklyScoresBanner_() {
+/**
+ * Post weekly scores banner to Discord scores channel
+ * Called by time-based trigger every Monday at 8:00 AM ET
+ *
+ * Flow:
+ * 1. Check if WEEKLY_BANNER_ENABLED flag is true
+ * 2. Fetch header text from WEEKLY_BANNER_LEFT_CELL (e.g., "Keep the Practice")
+ * 3. Detect next week number and map using getNextWeekAndMapFromSchedule()
+ * 4. Format banner with emojis and rule line
+ * 5. Post to SCORES_CHANNEL_ID via relay
+ *
+ * Format example:
+ *   🎖️      :KTP:    **Keep the Practice Week 3 Matches - dod_railyard_b6**    :KTP:      🎖️
+ *   `========================================`
+ *
+ * @returns {Object} { ok, posted, source } - ok=true if banner posted, source=sheet name used
+ */
+function postWeeklyScoresBanner() {
   if (!WEEKLY_BANNER_ENABLED) return { ok:false, reason:'disabled' };
 
-  var left = _disp_(WEEKLY_BANNER_LEFT_CELL);
-  var next = getNextWeekAndMapFromSchedule_();
+  var left = getDisplayValue(WEEKLY_BANNER_LEFT_CELL);
+  var next = getNextWeekAndMapFromSchedule();
 
   var weeknum   = next ? String(next.weekNumber) : '?';
   var prettyMap = next ? String(next.map || '') : 'TBD';

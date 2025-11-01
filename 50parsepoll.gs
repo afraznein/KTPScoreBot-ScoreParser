@@ -1,5 +1,19 @@
 /*************** PARSER AND POLLERS***************/
-function parseScoreLine_(raw) {
+/**
+ * Parse score line from Discord message content
+ * Supports formats:
+ *   - [Division]: map Team1 Score > Score Team2
+ *   - Division: map Score Team1 - Team2 Score
+ *   - map Team1 FF : Team2 5
+ *
+ * @param {string} raw - Raw message content from Discord
+ * @returns {Object|null} Parsed score object with { division, map, team1, score1, op, team2, score2, noteFF } or null if unparsable
+ *
+ * @example
+ * parseScoreLine("[Gold]: dod_lennon2 Wickeds 5 > Avengers 3")
+ * // Returns: { division: "Gold", map: "dod_lennon2", team1: "WICKEDS", score1: 5, op: ">", team2: "AVENGERS", score2: 3, noteFF: false }
+ */
+function parseScoreLine(raw) {
   let s = stripEmojis_((raw || '').trim(), { collapse:false });
 
   // Optional division
@@ -13,14 +27,9 @@ function parseScoreLine_(raw) {
   let mapToken = mapM[1].trim();
   const rest = mapM[2].trim();
 
-  // Map alias normalize
-  const mapAliases = loadMapAliases_();
-  // old: let mapLower = ...
-  const normalized = normalizeMapToken_(mapToken);
-  if (!normalized) return null; // unknown map → handled by your existing unknown-flow
-  const mapLower = normalized;  // canonical, e.g., "dod_railyard_b6"
-  if (mapAliases[mapLower]) mapLower = mapAliases[mapLower];
-  else if (!mapLower.startsWith('dod_')) mapLower = 'dod_' + mapLower;
+  // Map alias normalize - normalizeMapToken_ returns canonical dod_* format
+  const mapLower = normalizeMapToken_(mapToken);
+  if (!mapLower) return null; // unknown map
 
   // Operand split: support >, <, -, :
   const opM = rest.match(/([<>:-])/);
@@ -72,7 +81,7 @@ function parseScoreLine_(raw) {
 }
 
 /*************** POLLING ***************/
-function pollScores_() {
+function pollScores() {
   if (AUTO_RELOAD_ALIASES) reloadAliasCaches_();   // cheap + deterministic
   if (isQuotaCooldown_()) { SpreadsheetApp.getActive().toast('Poll skipped (relay in cooldown).'); return 0; }
 
@@ -132,7 +141,7 @@ function pollScores_() {
       continue;
     }
 
-    const parsed = parseScoreLine_(content);
+    const parsed = parseScoreLine(content);
     if (!parsed) { cnt.unparsable++; if (PARSE_DEBUG_VERBOSE) log_('INFO','Unparsable message',{msgId,content}); continue; }
     if (PARSE_DEBUG_VERBOSE) {
       log_('INFO','ParsedOK', 
@@ -226,7 +235,7 @@ function pollScores_() {
 }
 
 
-function pollFromIdOnce_(startId, includeStart) {
+function pollFromIdOnce(startId, includeStart) {
   if (AUTO_RELOAD_ALIASES) reloadAliasCaches_();
 
   // normalize startId
@@ -290,7 +299,7 @@ function pollFromIdOnce_(startId, includeStart) {
       continue;
     }
 
-    const parsed = parseScoreLine_(content);
+    const parsed = parseScoreLine(content);
     if (!parsed) {
       if (PARSE_DEBUG_VERBOSE) log_('INFO','Unparsable message', { msgId, content });
       lastProcessedId = msgId;
@@ -317,7 +326,7 @@ function pollFromIdOnce_(startId, includeStart) {
 
     // placeholders → skip
     if (parsed.team1 === '__PLACEHOLDER__' || parsed.team2 === '__PLACEHOLDER__') {
-      log_('INFO','Skip placeholder team (pollFromIdOnce_)', { msgId, t1: parsed.team1, t2: parsed.team2 });
+      log_('INFO','Skip placeholder team (pollFromIdOnce)', { msgId, t1: parsed.team1, t2: parsed.team2 });
       lastProcessedId = msgId;
       continue;
     }
@@ -382,7 +391,7 @@ function pollFromIdOnce_(startId, includeStart) {
       log_('WARN','react exceptions', { msgId, error:String(e) });
     }
 
-    // channel feed line (same formatter as pollScores_)
+    // channel feed line (same formatter as pollScores)
     if (RESULTS_LOG_CHANNEL) {
       let modeTag = 'OK';
       if (REPARSE_FORCE) {

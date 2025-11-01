@@ -1,19 +1,27 @@
 /*************** MENU UI AND WRAPPERS ***************/
+/**
+ * Google Sheets onOpen trigger - creates custom menu
+ * Automatically runs when spreadsheet opens
+ */
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Discord Scores')
     .addItem('Poll Now (Scores Channel)', 'WM_pollNow')
     .addItem('Poll From Message ID… ', 'UI_pollFromIdOnce')
     .addSeparator()
-    .addItem('Set Poll Pointer…', 'UI_setPollPointer_')
-    .addItem('Show Poll Pointer', 'UI_showPollPointerLink_')
-    .addItem('Jump Pointer to Latest', 'UI_jumpPointerToLatest_')
+    .addItem('Set Poll Pointer…', 'uiSetPollPointer')
+    .addItem('Show Poll Pointer', 'uiShowPollPointerLink')
+    .addItem('Jump Pointer to Latest', 'uiJumpPointerToLatest')
     .addSeparator()
     .addItem('Create Banner Trigger', 'createBannerTrigger')
     .addItem('Remove Banner Trigger', 'deleteBannerTrigger')
     .addToUi();
 }
 
+/**
+ * UI: Prompt user for Discord message ID and poll from that point
+ * Asks whether to include the starting message or start after it
+ */
 function UI_pollFromIdOnce() {
   const ui = SpreadsheetApp.getUi();
 
@@ -54,7 +62,7 @@ function UI_pollFromIdOnce() {
 }
 
 // --- UI: Set the poll pointer (cursor) for the Scores channel ---
-function UI_setPollPointer_() {
+function uiSetPollPointer() {
   const ui = SpreadsheetApp.getUi();
 
   const current = _getScoresCursorSafe_(); // read current (string or '')
@@ -89,13 +97,13 @@ function UI_setPollPointer_() {
 }
 
 // --- UI: Show pointer (handy when debugging) ---
-function UI_showPollPointer_() {
+function uiShowPollPointer() {
   const ui = SpreadsheetApp.getUi();
   const current = _getScoresCursorSafe_();
   ui.alert('Current Poll Pointer', current ? current : '(none set)', ui.ButtonSet.OK);
 }
 
-function UI_showPollPointerLink_() {
+function uiShowPollPointerLink() {
   const id = _getScoresCursorSafe_();
   if (!id) {
     SpreadsheetApp.getUi().alert('No poll pointer set yet.');
@@ -119,7 +127,7 @@ function UI_showPollPointerLink_() {
 }
 
 // --- (Optional) UI: Jump pointer to latest message to skip history ---
-function UI_jumpPointerToLatest_() {
+function uiJumpPointerToLatest() {
   const ui = SpreadsheetApp.getUi();
   try {
     const latest = fetchChannelMessages_(SCORES_CHANNEL_ID, null, 1); // newest 1 (your relay should return newest-first)
@@ -137,6 +145,11 @@ function UI_jumpPointerToLatest_() {
   }
 }
 
+/**
+ * Wrapper: Poll scores channel from current cursor (menu item)
+ * Includes error logging and graceful failure
+ * @returns {number} Number of messages processed
+ */
 function WM_pollNow() {
   try {
     return pollScores_();
@@ -146,6 +159,12 @@ function WM_pollNow() {
   }
 }
 
+/**
+ * Wrapper: Poll from specific message ID (one-time run)
+ * @param {string} startId - Discord message snowflake ID
+ * @param {boolean} includeStart - Whether to include the starting message
+ * @returns {number} Number of messages processed
+ */
 function WM_pollFromIdOnce(startId, includeStart) {
   try {
     return pollFromIdOnce_(startId, includeStart);
@@ -155,11 +174,11 @@ function WM_pollFromIdOnce(startId, includeStart) {
   }
 }
 
-function createFiveMinuteTrigger_() {
+function createFiveMinuteTrigger() {
   ScriptApp.newTrigger('pollScores_').timeBased().everyMinutes(5).create();
   SpreadsheetApp.getActive().toast('Created 5-minute trigger for score polling.');
 }
-function deleteAllTriggers_() {
+function deleteAllTriggers() {
   ScriptApp.getProjectTriggers().forEach(ScriptApp.deleteTrigger);
   SpreadsheetApp.getActive().toast('Removed all triggers.');
 }
