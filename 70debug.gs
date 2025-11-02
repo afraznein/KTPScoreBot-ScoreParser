@@ -236,18 +236,14 @@ function clearAliasCaches() {
 
 function reloadAliasCaches() {
   clearAliasCaches();
-  try { loadAliases(); } catch(e){ log('WARN','loadAliases_ failed', String(e)); }
-  try { loadMapAliases(); } catch(e){ log('WARN','loadMapAliases_ failed', String(e)); }
+  try { loadAliases(); } catch(e){ log('WARN','loadAliases failed', String(e)); }
+  try { loadMapAliases(); } catch(e){ log('WARN','loadMapAliases failed', String(e)); }
   try { loadDivisionCanonicalMaps(); buildCanonMapAliases(); } catch(e){ log('WARN','map alias build failed', String(e)); }
   /*log('INFO', 'Alias/map caches reloaded', {
     teamAliases: __TEAM_ALIAS_CACHE ? Object.keys(__TEAM_ALIAS_CACHE).length : 0,
     mapAliases: __CANON_MAP_ALIASES ? Object.keys(__CANON_MAP_ALIASES).length : 0,
     divCanon: __DIV_CANON_MAPS ? __DIV_CANON_MAPS.size : 0
   });*/
-}
-
-function reloadAliasCaches(){
-  reloadAliasCaches();
 }
 
 function seedMapAlias(){

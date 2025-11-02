@@ -90,10 +90,42 @@ function processWeekByeScores(sheet, division, weekIndex, maxWeeks) {
   const matches = getBlockMatches(sheet, topRow, weekIndex, maxWeeks);
 
   // Check if all non-BYE matches are complete
-  const { complete, byeMatches, scoredMatches } = analyzeBlockCompletion(matches);
+  const { complete, byeMatches, scoredMatches, unscoredNonBye } = analyzeBlockCompletion(matches);
 
-  if (!complete || byeMatches.length === 0) {
-    return result; // Not ready or no BYE matches to process
+  if (!complete) {
+    // Log why we're skipping (helps debug premature/late scoring issues)
+    if (unscoredNonBye.length > 0) {
+      log('DEBUG', 'BYE scoring skipped: incomplete week', {
+        division,
+        week: weekIndex,
+        map: mapToken,
+        totalMatches: matches.length,
+        scored: scoredMatches.length,
+        unscored: unscoredNonBye.length,
+        bye: byeMatches.length,
+        unscoredRows: unscoredNonBye.map(m => m.row)
+      });
+    }
+    return result;
+  }
+
+  if (byeMatches.length === 0) {
+    return result; // No BYE matches to process
+  }
+
+  // Verify at least one match has numeric scores (not just W/L flags)
+  const hasNumericScores = scoredMatches.some(m =>
+    (m.score1 !== null && !isNaN(m.score1)) || (m.score2 !== null && !isNaN(m.score2))
+  );
+
+  if (!hasNumericScores) {
+    log('WARN', 'BYE scoring skipped: no numeric scores available for averaging', {
+      division,
+      week: weekIndex,
+      map: mapToken,
+      scoredMatchCount: scoredMatches.length
+    });
+    return result;
   }
 
   // Calculate average points from scored matches
@@ -154,7 +186,7 @@ function isWeekPastOrCurrent(sheet, weekIndex) {
  * @param {number} topRow - Block top row (map header row)
  * @param {number} weekIndex - Week number
  * @param {number} maxWeeks - Total weeks
- * @returns {Array<Object>} Match objects with row, team1, team2, score1, score2
+ * @returns {Array<Object>} Match objects with row, team1, team2, score1, score2, wl1, wl2
  */
 function getBlockMatches(sheet, topRow, weekIndex, maxWeeks) {
   const matches = [];
@@ -165,16 +197,20 @@ function getBlockMatches(sheet, topRow, weekIndex, maxWeeks) {
 
   if (numRows <= 0) return matches;
 
-  // Read team names and scores in batch
+  // Read team names, W/L flags, and scores in batch
+  const wl1Data = sheet.getRange(startRow, COL_T1_WL, numRows, 1).getDisplayValues();
   const teamData = sheet.getRange(startRow, COL_T1_NAME, numRows, 1).getDisplayValues();
-  const team2Data = sheet.getRange(startRow, COL_T2_NAME, numRows, 1).getDisplayValues();
   const score1Data = sheet.getRange(startRow, COL_T1_SC, numRows, 1).getDisplayValues();
+  const wl2Data = sheet.getRange(startRow, COL_T2_WL, numRows, 1).getDisplayValues();
+  const team2Data = sheet.getRange(startRow, COL_T2_NAME, numRows, 1).getDisplayValues();
   const score2Data = sheet.getRange(startRow, COL_T2_SC, numRows, 1).getDisplayValues();
 
   for (let i = 0; i < numRows; i++) {
     const row = startRow + i;
     const team1 = String(teamData[i][0] || '').trim().toUpperCase();
     const team2 = String(team2Data[i][0] || '').trim().toUpperCase();
+    const wl1Str = String(wl1Data[i][0] || '').trim();
+    const wl2Str = String(wl2Data[i][0] || '').trim();
     const score1Str = String(score1Data[i][0] || '').trim();
     const score2Str = String(score2Data[i][0] || '').trim();
 
@@ -182,6 +218,8 @@ function getBlockMatches(sheet, topRow, weekIndex, maxWeeks) {
 
     const score1 = score1Str === '' ? null : Number(score1Str);
     const score2 = score2Str === '' ? null : Number(score2Str);
+    const wl1 = wl1Str === '' ? null : wl1Str;
+    const wl2 = wl2Str === '' ? null : wl2Str;
 
     matches.push({
       row,
@@ -189,6 +227,8 @@ function getBlockMatches(sheet, topRow, weekIndex, maxWeeks) {
       team2,
       score1,
       score2,
+      wl1,
+      wl2,
       isBye: isByeMatch(team1, team2)
     });
   }
@@ -208,8 +248,13 @@ function isByeMatch(team1, team2) {
 
 /**
  * Analyze block completion status
- * @param {Array<Object>} matches - All matches in block
- * @returns {Object} { complete: boolean, byeMatches: [], scoredMatches: [] }
+ *
+ * A match is considered "scored" if it has EITHER:
+ * - Valid scores in both columns D and H, OR
+ * - W/L flags in both columns B and F
+ *
+ * @param {Array<Object>} matches - All matches in block (with wl1, wl2, score1, score2)
+ * @returns {Object} { complete: boolean, byeMatches: [], scoredMatches: [], unscoredNonBye: [] }
  */
 function analyzeBlockCompletion(matches) {
   const byeMatches = [];
@@ -220,25 +265,55 @@ function analyzeBlockCompletion(matches) {
     if (match.isBye) {
       byeMatches.push(match);
     } else {
-      // Non-BYE match must have both scores
-      if (match.score1 !== null && match.score2 !== null &&
-          !isNaN(match.score1) && !isNaN(match.score2)) {
+      // Check if match has scores (D and H)
+      const hasScores = (match.score1 !== null && match.score2 !== null &&
+                        !isNaN(match.score1) && !isNaN(match.score2));
+
+      // Check if match has W/L flags (B and F)
+      const hasWL = (match.wl1 !== null && match.wl2 !== null);
+
+      // Match is scored if it has EITHER scores OR W/L flags
+      if (hasScores || hasWL) {
         scoredMatches.push(match);
       } else {
+        // Has team names but missing both scores AND W/L flags
         unscoredNonBye.push(match);
       }
     }
   }
 
-  const complete = (unscoredNonBye.length === 0) && (scoredMatches.length > 0);
+  // Verify accounting (defensive check - should always be true)
+  const totalAccounted = byeMatches.length + scoredMatches.length + unscoredNonBye.length;
+  if (totalAccounted !== matches.length) {
+    log('ERROR', 'Block completion accounting mismatch', {
+      total: matches.length,
+      accounted: totalAccounted,
+      byeCount: byeMatches.length,
+      scoredCount: scoredMatches.length,
+      unscoredCount: unscoredNonBye.length
+    });
+  }
 
-  return { complete, byeMatches, scoredMatches };
+  // Block is complete only if ALL of these conditions are met:
+  // 1. NO unscored non-BYE matches remain (no matches with teams but no scores/WL)
+  // 2. At least one non-BYE match has been scored (needed to calculate average)
+  // 3. We have at least 2 total scheduled matches (scored + bye) to avoid premature scoring
+  //    of sparsely populated weeks that may have more matches added later
+  const minTotalMatches = 2;
+  const totalScheduled = scoredMatches.length + byeMatches.length;
+
+  const complete = (unscoredNonBye.length === 0) &&
+                   (scoredMatches.length > 0) &&
+                   (totalScheduled >= minTotalMatches);
+
+  return { complete, byeMatches, scoredMatches, unscoredNonBye };
 }
 
 /**
  * Calculate average points from scored matches
- * @param {Array<Object>} scoredMatches - Matches with scores
- * @returns {number} Rounded average points (0 if no matches)
+ * Only uses matches with valid numeric scores (ignores matches with only W/L flags)
+ * @param {Array<Object>} scoredMatches - Matches considered scored
+ * @returns {number} Rounded average points (0 if no matches with numeric scores)
  */
 function calculateAveragePoints(scoredMatches) {
   if (scoredMatches.length === 0) return 0;
@@ -247,10 +322,21 @@ function calculateAveragePoints(scoredMatches) {
   let count = 0;
 
   for (const match of scoredMatches) {
-    totalPoints += match.score1;
-    totalPoints += match.score2;
-    count += 2;
+    // Only include matches with valid numeric scores
+    const hasValidScore1 = (match.score1 !== null && !isNaN(match.score1));
+    const hasValidScore2 = (match.score2 !== null && !isNaN(match.score2));
+
+    if (hasValidScore1) {
+      totalPoints += match.score1;
+      count++;
+    }
+    if (hasValidScore2) {
+      totalPoints += match.score2;
+      count++;
+    }
   }
+
+  if (count === 0) return 0; // No valid scores to average
 
   const average = totalPoints / count;
   return Math.round(average);
@@ -267,10 +353,13 @@ function calculateAveragePoints(scoredMatches) {
  * @returns {Object} Processing result
  */
 function scoreByeMatch(sheet, division, byeMatch, averagePoints, mapToken, weekIndex) {
-  const { row, team1, team2, score1, score2 } = byeMatch;
+  const { row, team1, team2, score1, score2, wl1, wl2 } = byeMatch;
 
-  // Skip if already scored
-  if (score1 !== null || score2 !== null) {
+  // Skip if already scored (has scores OR W/L flags)
+  const hasScores = (score1 !== null || score2 !== null);
+  const hasWL = (wl1 !== null || wl2 !== null);
+
+  if (hasScores || hasWL) {
     return {
       success: false,
       reason: 'already_scored',
@@ -278,7 +367,9 @@ function scoreByeMatch(sheet, division, byeMatch, averagePoints, mapToken, weekI
       week: weekIndex,
       row,
       team1,
-      team2
+      team2,
+      hadScores: hasScores,
+      hadWL: hasWL
     };
   }
 

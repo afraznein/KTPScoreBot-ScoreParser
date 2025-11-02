@@ -46,7 +46,7 @@ function fetchChannelMessages(channelId, afterId, limitOpt) {
     '&limit=' + encodeURIComponent(limit);
 
   // small jitter to de-sync concurrent scripts
-  Utilities.sleep(jitterMs());
+  Utilities.sleep(getJitterMs());
 
   try {
     var res = relayGet('/messages?' + qs);
@@ -175,7 +175,7 @@ function formatScoreLine(division, row, parsed, target, authorId, modeTag, prevS
   const right = `${parsed.score2} ${parsed.team2}`;
   const op    = parsed.op || '-';
   const by    = authorId ? ` — reported by <@${authorId}>` : '';
-  const link  = parsed.__msgId ? buildDiscordMessageLink(SCORES_CHANNEL_ID, parsed.__msgId) : '';
+  const link  = parsed.msgId ? buildDiscordMessageLink(SCORES_CHANNEL_ID, parsed.msgId) : '';
   const linkBit = link ? ` [jump](${link})` : '';
   const rowBit  = `row ${target.row}`;
   const prevBit = prevScoresOpt ? ` (was ${prevScoresOpt[0]} ${op} ${prevScoresOpt[1]})` : '';

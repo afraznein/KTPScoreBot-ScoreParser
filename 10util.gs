@@ -367,7 +367,7 @@ function normalizeMapToken(raw) {
 /**
  * Normalize team name: handle aliases, "THE" prefix, placeholders
  * @param {string} raw - Raw team name from Discord
- * @returns {string} Canonical UPPERCASE team name, '__PLACEHOLDER__', or '__AMBIG_ALIAS__:...'
+ * @returns {string} Canonical UPPERCASE team name, 'PLACEHOLDER', or 'AMBIG_ALIAS:...'
  */
 function normalizeTeamName(raw) {
   let cleanedUpper = sanitizeTeamToken(raw).toUpperCase();
@@ -429,10 +429,10 @@ function computeContentHash(content) {
   );
 }
 
-let __TEAM_CANON_CACHE = null;
+let TEAM_CANON_CACHE = null;
 
 function getCanonicalTeamMap() {
-  if (__TEAM_CANON_CACHE) return __TEAM_CANON_CACHE;
+  if (TEAM_CANON_CACHE) return TEAM_CANON_CACHE;
   const map = {};
   for (const sheetName of DIVISION_SHEETS) {
     const sh = getSheetByName(sheetName);
@@ -444,15 +444,15 @@ function getCanonicalTeamMap() {
       map[name.toUpperCase()] = name.toUpperCase();
     }
   }
-  __TEAM_CANON_CACHE = map;
+  TEAM_CANON_CACHE = map;
   return map;
 }
 
 // ---- Division-first canonical maps -----------------------------------------
-let __DIV_CANON_MAPS = null; // Set<string> lowercased "dod_*" from BRONZE/SILVER/GOLD col A
+let DIV_CANON_MAPS = null; // Set<string> lowercased "dod_*" from BRONZE/SILVER/GOLD col A
 
 function loadDivisionCanonicalMaps() {
-  if (__DIV_CANON_MAPS) return __DIV_CANON_MAPS;
+  if (DIV_CANON_MAPS) return DIV_CANON_MAPS;
 
   const ss = SpreadsheetApp.getActive();
   const divs = (typeof DIVISION_SHEETS !== 'undefined' && DIVISION_SHEETS.length)
@@ -477,27 +477,27 @@ function loadDivisionCanonicalMaps() {
     }
   }
 
-  __DIV_CANON_MAPS = out;
+  DIV_CANON_MAPS = out;
   return out;
 }
 
-let __TEAM_ALIAS_CACHE = null;
+let TEAM_ALIAS_CACHE = null;
 
 function loadAliases() {
-  if (__TEAM_ALIAS_CACHE) return __TEAM_ALIAS_CACHE;
+  if (TEAM_ALIAS_CACHE) return TEAM_ALIAS_CACHE;
 
   const mapMulti = {}; // ALIAS (UPPER) -> Set of CANON (UPPER)
   const sh = SpreadsheetApp.getActive().getSheetByName('_Aliases');
 
-  if (!sh) { __TEAM_ALIAS_CACHE = {}; return __TEAM_ALIAS_CACHE; }
+  if (!sh) { TEAM_ALIAS_CACHE = {}; return TEAM_ALIAS_CACHE; }
 
   const lastRow = sh.getLastRow();
   const lastCol = sh.getLastColumn();
-  if (lastRow < 2) { __TEAM_ALIAS_CACHE = {}; return __TEAM_ALIAS_CACHE; }
+  if (lastRow < 2) { TEAM_ALIAS_CACHE = {}; return TEAM_ALIAS_CACHE; }
 
   const width = Math.min(3, lastCol); // alias | canonical | scope (scope optional)
   const numRows = lastRow - 1;
-  if (numRows <= 0) { __TEAM_ALIAS_CACHE = {}; return __TEAM_ALIAS_CACHE; }
+  if (numRows <= 0) { TEAM_ALIAS_CACHE = {}; return TEAM_ALIAS_CACHE; }
 
   const rows = sh.getRange(2, 1, numRows, width).getValues();
   for (const [alias, canon/*, scope*/] of rows) {
@@ -512,28 +512,28 @@ function loadAliases() {
   for (const [a, set] of Object.entries(mapMulti)) {
     out[a] = Array.from(set);
   }
-  __TEAM_ALIAS_CACHE = out;
+  TEAM_ALIAS_CACHE = out;
   return out;
 }
 
-let __MAP_ALIAS_CACHE = null;
+let MAP_ALIAS_CACHE = null;
 
 function loadMapAliases() {
-  if (__MAP_ALIAS_CACHE) return __MAP_ALIAS_CACHE;
+  if (MAP_ALIAS_CACHE) return MAP_ALIAS_CACHE;
 
   const out = {}; // alias(lower) -> dod_* (lower)
   const sh = SpreadsheetApp.getActive().getSheetByName('_MapAliases');
 
   // If the sheet is missing or has only a header (or fewer), return empty cache
-  if (!sh) { __MAP_ALIAS_CACHE = out; return out; }
+  if (!sh) { MAP_ALIAS_CACHE = out; return out; }
 
   const lastRow = sh.getLastRow();
   const lastCol = sh.getLastColumn();
-  if (lastRow < 2) { __MAP_ALIAS_CACHE = out; return out; } // nothing to read
+  if (lastRow < 2) { MAP_ALIAS_CACHE = out; return out; } // nothing to read
 
   const width = Math.min(2, lastCol); // tolerate extra columns
   const numRows = lastRow - 1;
-  if (numRows <= 0) { __MAP_ALIAS_CACHE = out; return out; }
+  if (numRows <= 0) { MAP_ALIAS_CACHE = out; return out; }
 
   const rows = sh.getRange(2, 1, numRows, width).getValues();
   for (const [alias, canon] of rows) {
@@ -544,7 +544,7 @@ function loadMapAliases() {
     out[a] = c;
   }
 
-  __MAP_ALIAS_CACHE = out;
+  MAP_ALIAS_CACHE = out;
   return out;
 }
 
@@ -553,12 +553,12 @@ function isCanonTeam(upperName) {
   return !!canon[String(upperName || '')];
 }
 
-let __CANON_MAPS = null;
+let CANON_MAPS = null;
 
 function loadCanonicalMaps() {
-  if (__CANON_MAPS) return __CANON_MAPS;
+  if (CANON_MAPS) return CANON_MAPS;
   const sh = SpreadsheetApp.getActive().getSheetByName(GENERAL_SHEET);
-  if (!sh) return (__CANON_MAPS = new Set());
+  if (!sh) return (CANON_MAPS = new Set());
   const vals = sh.getRange(GENERAL_MAPS_RANGE).getValues().flat();
   const out = new Set();
   for (let raw of vals) {
@@ -567,10 +567,10 @@ function loadCanonicalMaps() {
     if (!m.startsWith('dod_')) m = 'dod_' + m;
     out.add(m);
   }
-  return (__CANON_MAPS = out);
+  return (CANON_MAPS = out);
 }
 
-let __CANON_MAP_ALIASES = null;
+let CANON_MAP_ALIASES = null;
 /**
  * Build alias -> canonical table with priority:
  *   1) Division sheets (BRONZE/SILVER/GOLD col A)    <-- primary source
@@ -585,7 +585,7 @@ let __CANON_MAP_ALIASES = null;
  * exist, we prefer the base as the canonical.
  */
 function buildCanonMapAliases() {
-  if (__CANON_MAP_ALIASES) return __CANON_MAP_ALIASES;
+  if (CANON_MAP_ALIASES) return CANON_MAP_ALIASES;
 
   const table = {}; // alias(lower) -> canonical(lower)
 
@@ -620,7 +620,7 @@ function buildCanonMapAliases() {
 
   // 3) Fallback to General list only for missing aliases
   const gen = (function loadCanonicalMaps() {
-    if (typeof __CANON_MAPS !== 'undefined' && __CANON_MAPS) return __CANON_MAPS;
+    if (typeof CANON_MAPS !== 'undefined' && CANON_MAPS) return CANON_MAPS;
     const sh = SpreadsheetApp.getActive().getSheetByName('General');
     const out = new Set();
     if (sh) {
@@ -632,7 +632,7 @@ function buildCanonMapAliases() {
         if (/^dod_[a-z0-9_]+$/.test(m)) out.add(m);
       }
     }
-    __CANON_MAPS = out;
+    CANON_MAPS = out;
     return out;
   })();
 
@@ -644,14 +644,14 @@ function buildCanonMapAliases() {
     if (!table[base])  addAlias(base, c);
   }
 
-  __CANON_MAP_ALIASES = table;
+  CANON_MAP_ALIASES = table;
   return table;
 }
 
 /*************** RECEIPTS HELPERS ***************/
 // Receipt cache for performance optimization
-let __RECEIPT_CACHE = null;
-let __RECEIPT_MSGID_CACHE = null;
+let RECEIPT_CACHE = null;
+let RECEIPT_MSGID_CACHE = null;
 
 function getReceiptsSheet() {
   const sh = ensureSheet(RECEIPTS_SHEET, [
@@ -668,14 +668,14 @@ function getReceiptKey(division, row) { return `${division}|${row}`; }
  * @returns {Map<string, Object>} Map of receipt key to receipt data
  */
 function loadReceiptCache() {
-  if (__RECEIPT_CACHE) return __RECEIPT_CACHE;
+  if (RECEIPT_CACHE) return RECEIPT_CACHE;
 
   const sh = getReceiptsSheet();
   const last = sh.getLastRow();
   if (last < 2) {
-    __RECEIPT_CACHE = new Map();
-    __RECEIPT_MSGID_CACHE = new Map();
-    return __RECEIPT_CACHE;
+    RECEIPT_CACHE = new Map();
+    RECEIPT_MSGID_CACHE = new Map();
+    return RECEIPT_CACHE;
   }
 
   const data = sh.getRange(2, 1, last - 1, 13).getValues();
@@ -704,8 +704,8 @@ function loadReceiptCache() {
     if (msgId) msgIdCache.set(String(msgId), receipt);
   }
 
-  __RECEIPT_CACHE = divRowCache;
-  __RECEIPT_MSGID_CACHE = msgIdCache;
+  RECEIPT_CACHE = divRowCache;
+  RECEIPT_MSGID_CACHE = msgIdCache;
   return divRowCache;
 }
 
@@ -713,8 +713,8 @@ function loadReceiptCache() {
  * Invalidate receipt cache (call after writing new receipts)
  */
 function invalidateReceiptCache() {
-  __RECEIPT_CACHE = null;
-  __RECEIPT_MSGID_CACHE = null;
+  RECEIPT_CACHE = null;
+  RECEIPT_MSGID_CACHE = null;
 }
 
 function findExistingReceipt(division, row) {
@@ -733,9 +733,9 @@ function writeReceipt(division, row, map, tC, tG, sC, sG, msgId, authorId, note,
 function findReceiptByMsgId(msgId) {
   // Use cache for fast lookup
   loadReceiptCache(); // ensure both caches are populated
-  if (!__RECEIPT_MSGID_CACHE) return null;
+  if (!RECEIPT_MSGID_CACHE) return null;
 
-  const receipt = __RECEIPT_MSGID_CACHE.get(String(msgId));
+  const receipt = RECEIPT_MSGID_CACHE.get(String(msgId));
   if (!receipt) return null;
 
   return {

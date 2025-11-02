@@ -85,7 +85,7 @@ function pollScores() {
   if (AUTO_RELOAD_ALIASES) reloadAliasCaches();   // cheap + deterministic
   if (isQuotaCooldown()) { SpreadsheetApp.getActive().toast('Poll skipped (relay in cooldown).'); return 0; }
 
-  const startMs = nowMs();
+  const startMs = getNowMs();
   const cursorBefore = getCursor(SCORES_CHANNEL_ID) || '';
   const cnt = makeCounters();
 
@@ -117,7 +117,7 @@ function pollScores() {
 
   for (const m of merged) {
     if (processed >= MAX_MESSAGES_PER_POLL) break;
-    if (nowMs() - startMs > (MAX_MS_PER_POLL - RUNTIME_SAFETY_BUFFER)) break;
+    if (getNowMs() - startMs > (MAX_MS_PER_POLL - RUNTIME_SAFETY_BUFFER)) break;
 
     cnt.seen++;
 
@@ -150,12 +150,12 @@ function pollScores() {
 
     cnt.parsedOK++;
 
-    parsed.__contentHash = contentHash;
-    parsed.__editedTs    = editedTs;
-    parsed.__msgId       = msgId;
-    parsed.__authorId    = authorId;
+    parsed.contentHash = contentHash;
+    parsed.editedTs    = editedTs;
+    parsed.msgId       = msgId;
+    parsed.authorId    = authorId;
 
-    if (parsed.team1 === '__PLACEHOLDER__' || parsed.team2 === '__PLACEHOLDER__') {
+    if (parsed.team1 === 'PLACEHOLDER' || parsed.team2 === 'PLACEHOLDER') {
       cnt.placeholders++;
       log('INFO','Skip placeholder team (pre-unknown-check)', { msgId, team1: parsed.team1, team2: parsed.team2 });
       continue;
@@ -197,8 +197,8 @@ function pollScores() {
     }
 
     // optional success DM (respect DM_ENABLED and not during reparse if you want)
-    if (write.prev && parsed.__authorId && DM_ENABLED && !REPARSE_FORCE) {
-      postDM(parsed.__authorId, `Update applied: ${target.sheet.getName()} row ${target.row} on ${parsed.map} is now ${parsed.team1} ${parsed.score1} ${parsed.op} ${parsed.score2} ${parsed.team2}.`);
+    if (write.prev && parsed.authorId && DM_ENABLED && !REPARSE_FORCE) {
+      postDM(parsed.authorId, `Update applied: ${target.sheet.getName()} row ${target.row} on ${parsed.map} is now ${parsed.team1} ${parsed.score1} ${parsed.op} ${parsed.score2} ${parsed.team2}.`);
     }
     if (PARSE_DEBUG_VERBOSE) {log('INFO','AppliedOK', 
       {msgId,division: target.sheet.getName(),row: target.row,map: parsed.map,t1: parsed.team1, s1: parsed.score1,t2: parsed.team2, s2: parsed.score2});
@@ -227,7 +227,7 @@ function pollScores() {
     log('INFO','CursorUnchanged', { at: cursorBefore });
   }
 
-  const durationMs = nowMs() - startMs;
+  const durationMs = getNowMs() - startMs;
   postRunSummary(RESULTS_LOG_CHANNEL, { kind:'pollScores', cursorBefore, cursorAfter, durationMs }, cnt);
 
   SpreadsheetApp.getActive().toast(`Poll complete: ${processed} msg(s) at ${formatTimestamp()}.`);
@@ -242,7 +242,7 @@ function pollFromIdOnce(startId, includeStart) {
   startId = startId ? String(startId) : '';
   if (PARSE_DEBUG_VERBOSE) log('INFO','PollFromId params', { startId, includeStart: !!includeStart });
 
-  const startMs = nowMs();
+  const startMs = getNowMs();
   let batch = [];
 
   if (includeStart && startId) {
@@ -272,7 +272,7 @@ function pollFromIdOnce(startId, includeStart) {
 
   for (const m of batch) {
     if (processed >= MAX_MESSAGES_PER_POLL) break;
-    if (nowMs() - startMs > (MAX_MS_PER_POLL - RUNTIME_SAFETY_BUFFER)) break;
+    if (getNowMs() - startMs > (MAX_MS_PER_POLL - RUNTIME_SAFETY_BUFFER)) break;
 
     const msgId    = String(m.id);
     if (lastProcessedId && compareSnowflakes(msgId, lastProcessedId) <= 0) {
@@ -319,13 +319,13 @@ function pollFromIdOnce(startId, includeStart) {
     }
 
     // annotate after we know we’ll process
-    parsed.__contentHash = contentHash;
-    parsed.__editedTs    = editedTs;
-    parsed.__msgId       = msgId;
-    parsed.__authorId    = authorId;
+    parsed.contentHash = contentHash;
+    parsed.editedTs    = editedTs;
+    parsed.msgId       = msgId;
+    parsed.authorId    = authorId;
 
     // placeholders → skip
-    if (parsed.team1 === '__PLACEHOLDER__' || parsed.team2 === '__PLACEHOLDER__') {
+    if (parsed.team1 === 'PLACEHOLDER' || parsed.team2 === 'PLACEHOLDER') {
       log('INFO','Skip placeholder team (pollFromIdOnce)', { msgId, t1: parsed.team1, t2: parsed.team2 });
       lastProcessedId = msgId;
       continue;
@@ -365,8 +365,8 @@ function pollFromIdOnce(startId, includeStart) {
     }
 
     // optional success DM on edits; obey your DM toggle if you prefer
-    if (write.prev && parsed.__authorId && DM_ENABLED) {
-      postDM(parsed.__authorId,
+    if (write.prev && parsed.authorId && DM_ENABLED) {
+      postDM(parsed.authorId,
         `Update applied: ${target.sheet.getName()} row ${target.row} on ${parsed.map} is now ` +
         `${parsed.team1} ${parsed.score1} ${parsed.op} ${parsed.score2} ${parsed.team2}.`
       );

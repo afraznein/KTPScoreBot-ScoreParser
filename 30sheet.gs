@@ -173,8 +173,8 @@ function applyScoresToRow(sheet, row, sheetT1Upper, sheetT2Upper, parsed) {
   // REPARSE: if sheet already has the same numbers, do NOT touch cells; just receipt NOCHANGE
   if (REPARSE_FORCE && scoresAlreadyMatch(sheet, row, scoreC, scoreG)) {
     writeReceipt(sheet.getName(), row, parsed.map, sheetT1Upper, sheetT2Upper,
-                  scoreC, scoreG, parsed.__msgId || '', parsed.__authorId || '',
-                  'REPARSE_NOCHANGE', parsed.__contentHash || '', parsed.__editedTs || '');
+                  scoreC, scoreG, parsed.msgId || '', parsed.authorId || '',
+                  'REPARSE_NOCHANGE', parsed.contentHash || '', parsed.editedTs || '');
     return {
       ok: true,
       prev: prevReceipt,
@@ -187,8 +187,8 @@ function applyScoresToRow(sheet, row, sheetT1Upper, sheetT2Upper, parsed) {
   // touch nothing, but still write an EDIT receipt if there was an earlier receipt
   if (!REPARSE_FORCE && scoresEqual && prevReceipt) {
     writeReceipt(division, row, parsed.map, sheetT1Upper, sheetT2Upper,
-                  scoreC, scoreG, parsed.__msgId || '', parsed.__authorId || '',
-                  'EDIT_NOCHANGE', parsed.__contentHash || '', parsed.__editedTs || '');
+                  scoreC, scoreG, parsed.msgId || '', parsed.authorId || '',
+                  'EDIT_NOCHANGE', parsed.contentHash || '', parsed.editedTs || '');
     return {
       ok: true,
       prev: prevReceipt,
@@ -211,8 +211,8 @@ function applyScoresToRow(sheet, row, sheetT1Upper, sheetT2Upper, parsed) {
   // Audit trail
   const note = parsed.noteFF ? 'FF' : (prevReceipt ? 'EDIT' : 'NEW');
   writeReceipt(division, row, parsed.map, sheetT1Upper, sheetT2Upper,
-                scoreC, scoreG, parsed.__msgId || '', parsed.__authorId || '',
-                note, parsed.__contentHash || '', parsed.__editedTs || '');
+                scoreC, scoreG, parsed.msgId || '', parsed.authorId || '',
+                note, parsed.contentHash || '', parsed.editedTs || '');
 
   // Operand sanity logs (unchanged)
   if (parsed.op === '>' && !(parsed.score1 > parsed.score2)) {
