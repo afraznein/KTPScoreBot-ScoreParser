@@ -14,7 +14,7 @@ function findBlockByMap(sheet, targetMapLower) {
     const mapCell = String(sheet.getRange(top, 1).getValue() || '').trim().toLowerCase(); // A[top]
     if (!mapCell || mapCell !== targetMapLower) continue;
     const dateCell = sheet.getRange(top + 1, 1).getValue();                                // A[top+1]
-    const weekDate = coerceDate_(dateCell);
+    const weekDate = coerceDate(dateCell);
     const score = weekDate ? Math.abs(weekDate.getTime() - today.getTime()) : 5e14;       // prefer nearest
     if (score < bestScore) { bestScore = score; best = { top, weekDate, mapLower: mapCell }; }
   }
@@ -60,15 +60,15 @@ function autodetectDivisionAndRow(mapRaw, team1Raw, team2Raw, preferredDivision)
   if (!mapLower) return null;
   if (!mapLower.startsWith('dod_')) mapLower = 'dod_' + mapLower;
 
-  const aU = normalizeTeamName_(team1Raw);
-  const bU = normalizeTeamName_(team2Raw);
+  const aU = normalizeTeamName(team1Raw);
+  const bU = normalizeTeamName(team2Raw);
 
   const order = [];
   if (preferredDivision && DIVISION_SHEETS.includes(preferredDivision)) order.push(preferredDivision);
   for (const d of DIVISION_SHEETS) if (!order.includes(d)) order.push(d);
 
   for (const division of order) {
-    const sh = getSheetByName_(division);
+    const sh = getSheetByName(division);
     if (!sh) continue;
     const block = findBlockByMap(sh, mapLower);
     if (!block) continue;

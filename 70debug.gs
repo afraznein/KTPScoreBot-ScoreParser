@@ -9,7 +9,7 @@ function seedAliasesFromDivisions() {
   const ss = SpreadsheetApp.getActive();
 
   // Ensure _Aliases exists and has headers
-  const aliasSheet = ensureSheet_('_Aliases', ['alias','canonical','scope','notes']);
+  const aliasSheet = ensureSheet('_Aliases', ['alias','canonical','scope','notes']);
 
   // Build a set of existing aliases to prevent duplicates
   const existingAliases = new Set();
@@ -30,14 +30,14 @@ function seedAliasesFromDivisions() {
     if (!canonUpper) return;
 
     // SKIP placeholders like "GOLD A", "SILVER Z", "BRONZE I"
-    if (isPlaceholderTeamAnyDiv_(canonUpper)) return;
+    if (isPlaceholderTeamAnyDiv(canonUpper)) return;
 
     const variants = makeTeamVariants(canonUpper);
     for (const v of variants) {
       const aliasUpper = String(v || '').trim().toUpperCase();
       if (!aliasUpper) continue;
       if (aliasUpper === canonUpper) continue;            // don't alias to itself
-      if (isPlaceholderTeamAnyDiv_(aliasUpper)) continue; // never add placeholder tokens as aliases
+      if (isPlaceholderTeamAnyDiv(aliasUpper)) continue; // never add placeholder tokens as aliases
       if (existingAliases.has(aliasUpper)) continue;      // no dupes
       rowsToAppend.push([aliasUpper, canonUpper, scope, note || 'seed']);
       existingAliases.add(aliasUpper);
@@ -105,16 +105,16 @@ function makeTeamVariants(canonUpper) {
   return Array.from(out)
     .map(s => s.trim())
     .filter(Boolean)
-    .filter(s => !isPlaceholderTeamAnyDiv_(s));
+    .filter(s => !isPlaceholderTeamAnyDiv(s));
 }
 
 function ensureMapAlias() {
-  return ensureSheet_('_MapAlias', ['token_raw','last_seen','count','example_msgId','authorId']);
+  return ensureSheet('_MapAlias', ['token_raw','last_seen','count','example_msgId','authorId']);
 }
 
 function appendMapAliasRows(rows) {
   var sh = ensureMapAlias();
-  safeSetValues_(sh, sh.getLastRow() + 1, 1, rows, '_MapAlias');
+  safeSetValues(sh, sh.getLastRow() + 1, 1, rows, '_MapAlias');
 }
 
 function seedMapAliasesFromGeneral() {
@@ -134,7 +134,7 @@ function seedMapAliasesFromGeneral() {
   );
 
   // --- Ensure _MapAliases with header
-  const mapAliasSheet = ensureSheet_('_MapAliases', ['alias', 'canonical']);
+  const mapAliasSheet = ensureSheet('_MapAliases', ['alias', 'canonical']);
 
   // Build a set of existing alias->canonical so we don’t re-add
   const existing = new Map();           // alias -> canonical
@@ -157,7 +157,7 @@ function seedMapAliasesFromGeneral() {
   const collisions = new Set(); // aliases that map to multiple canonicals in this pass
 
   // Helper: generate alias variants for a canonical "dod_*"
-  function makeMapVariants_(canonicalDodLower) {
+  function makeMapVariants(canonicalDodLower) {
     const noDod = canonicalDodLower.replace(/^dod_/, '');    // e.g., "railyard_b6"
     const parts = noDod.split('_');                          // ["railyard","b6"]
     const out = new Set();
@@ -172,7 +172,7 @@ function seedMapAliasesFromGeneral() {
 
   // Build proposals
   for (const c of canonicals) {
-    const variants = makeMapVariants_(c);
+    const variants = makeMapVariants(c);
     for (const alias of variants) {
       if (!alias) continue;
       const a = alias.toLowerCase();
@@ -215,7 +215,7 @@ function seedMapAliasesFromGeneral() {
   if (toWrite.length > 0) {
     const startRow = mapAliasSheet.getLastRow() + 1;
     // Use your safe batch writer (no-op on empty)
-    safeSetValues_(mapAliasSheet, startRow, 1, toWrite);
+    safeSetValues(mapAliasSheet, startRow, 1, toWrite);
   }
 
   return {
@@ -231,15 +231,15 @@ function clearAliasCaches() {
   __CANON_MAPS = null;            // General fallback cache
   __CANON_MAP_ALIASES = null;
   __DIV_CANON_MAPS = null;        // NEW
-  //log_('INFO','Alias/map caches cleared');
+  //log('INFO','Alias/map caches cleared');
 }
 
 function reloadAliasCaches() {
   clearAliasCaches();
-  try { loadAliases_(); } catch(e){ log_('WARN','loadAliases_ failed', String(e)); }
-  try { loadMapAliases_(); } catch(e){ log_('WARN','loadMapAliases_ failed', String(e)); }
-  try { loadDivisionCanonicalMaps_(); buildCanonMapAliases_(); } catch(e){ log_('WARN','map alias build failed', String(e)); }
-  /*log_('INFO', 'Alias/map caches reloaded', {
+  try { loadAliases(); } catch(e){ log('WARN','loadAliases_ failed', String(e)); }
+  try { loadMapAliases(); } catch(e){ log('WARN','loadMapAliases_ failed', String(e)); }
+  try { loadDivisionCanonicalMaps(); buildCanonMapAliases(); } catch(e){ log('WARN','map alias build failed', String(e)); }
+  /*log('INFO', 'Alias/map caches reloaded', {
     teamAliases: __TEAM_ALIAS_CACHE ? Object.keys(__TEAM_ALIAS_CACHE).length : 0,
     mapAliases: __CANON_MAP_ALIASES ? Object.keys(__CANON_MAP_ALIASES).length : 0,
     divCanon: __DIV_CANON_MAPS ? __DIV_CANON_MAPS.size : 0
@@ -260,5 +260,5 @@ function seedTeamAlias(){
 
 function ADMIN_ResetPollCursor() {
   PropertiesService.getScriptProperties().deleteProperty(LAST_ID_KEY);
-  log_('INFO','LAST_ID_KEY cleared');
+  log('INFO','LAST_ID_KEY cleared');
 }

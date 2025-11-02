@@ -312,7 +312,7 @@ function postWeeklyScoresBanner() {
   var header = `${EMOJI_DOD}      ${EMOJI_KTP}    **${left} Week ${weeknum} Matches - ${prettyMap}**    ${EMOJI_KTP}      ${EMOJI_DOD}\n`;
   header += `\`${rule}\``;
 
-  relayPost_('/reply', { channelId:String(SCORES_CHANNEL_ID), content: header });
+  relayPost('/reply', { channelId:String(SCORES_CHANNEL_ID), content: header });
 
   // new: use sourceSheetName (string) in the return, no .getName()
   return { ok: !!next, posted: header, source: next ? next.sourceSheetName : '(none)' };

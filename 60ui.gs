@@ -15,6 +15,10 @@ function onOpen() {
     .addSeparator()
     .addItem('Create Banner Trigger', 'createBannerTrigger')
     .addItem('Remove Banner Trigger', 'deleteBannerTrigger')
+    .addSeparator()
+    .addItem('Process BYE Scores Now', 'manualProcessByeScores')
+    .addItem('Create BYE Scoring Trigger', 'uiCreateByeTrigger')
+    .addItem('Remove BYE Scoring Trigger', 'uiDeleteByeTrigger')
     .addToUi();
 }
 
@@ -65,7 +69,7 @@ function UI_pollFromIdOnce() {
 function uiSetPollPointer() {
   const ui = SpreadsheetApp.getUi();
 
-  const current = _getScoresCursorSafe_(); // read current (string or '')
+  const current = getScoresCursorSafe(); // read current (string or '')
   ui.alert('Current Poll Pointer', current ? current : '(none set)', ui.ButtonSet.OK);
 
   // Prompt for a new message ID (Discord snowflake)
@@ -81,7 +85,7 @@ function uiSetPollPointer() {
   const raw = (resp.getResponseText() || '').trim();
   if (!raw) {
     // clear
-    _clearScoresCursorSafe_();
+    clearScoresCursorSafe();
     ui.alert('Poll pointer cleared.');
     return;
   }
@@ -92,24 +96,24 @@ function uiSetPollPointer() {
     return;
   }
 
-  _setScoresCursorSafe_(raw);
+  setScoresCursorSafe(raw);
   ui.alert('Poll pointer set.', `New cursor: ${raw}`, ui.ButtonSet.OK);
 }
 
 // --- UI: Show pointer (handy when debugging) ---
 function uiShowPollPointer() {
   const ui = SpreadsheetApp.getUi();
-  const current = _getScoresCursorSafe_();
+  const current = getScoresCursorSafe();
   ui.alert('Current Poll Pointer', current ? current : '(none set)', ui.ButtonSet.OK);
 }
 
 function uiShowPollPointerLink() {
-  const id = _getScoresCursorSafe_();
+  const id = getScoresCursorSafe();
   if (!id) {
     SpreadsheetApp.getUi().alert('No poll pointer set yet.');
     return;
   }
-  const link = buildDiscordMessageLink_(SCORES_CHANNEL_ID, id);
+  const link = buildDiscordMessageLink(SCORES_CHANNEL_ID, id);
   if (!link) {
     SpreadsheetApp.getUi().alert('Could not build a link for the current pointer.');
     return;
@@ -130,7 +134,7 @@ function uiShowPollPointerLink() {
 function uiJumpPointerToLatest() {
   const ui = SpreadsheetApp.getUi();
   try {
-    const latest = fetchChannelMessages_(SCORES_CHANNEL_ID, null, 1); // newest 1 (your relay should return newest-first)
+    const latest = fetchChannelMessages(SCORES_CHANNEL_ID, null, 1); // newest 1 (your relay should return newest-first)
     if (!latest || !latest.length) {
       ui.alert('No messages returned for this channel.');
       return;
@@ -138,7 +142,7 @@ function uiJumpPointerToLatest() {
     // If your relay returns newest-first, id is latest. If oldest-first, adjust as needed.
     const newestMsg = latest[0];
     const id = String(newestMsg.id);
-    _setScoresCursorSafe_(id);
+    setScoresCursorSafe(id);
     ui.alert('Poll pointer moved to latest message.', `Cursor set to: ${id}`, ui.ButtonSet.OK);
   } catch (e) {
     ui.alert('Failed to fetch latest message:\n' + String(e));
@@ -152,9 +156,9 @@ function uiJumpPointerToLatest() {
  */
 function WM_pollNow() {
   try {
-    return pollScores_();
+    return pollScores();
   } catch (e) {
-    log_('ERROR', 'PollNow crashed', { message: String(e), stack: (e && e.stack) ? String(e.stack) : '' });
+    log('ERROR', 'PollNow crashed', { message: String(e), stack: (e && e.stack) ? String(e.stack) : '' });
     throw e; // keep Apps Script line number visible
   }
 }
@@ -167,15 +171,15 @@ function WM_pollNow() {
  */
 function WM_pollFromIdOnce(startId, includeStart) {
   try {
-    return pollFromIdOnce_(startId, includeStart);
+    return pollFromIdOnce(startId, includeStart);
   } catch (e) {
-    log_('ERROR', 'pollFromIdOnce crashed', { message: String(e), stack: (e && e.stack) ? String(e.stack) : '' });
+    log('ERROR', 'pollFromIdOnce crashed', { message: String(e), stack: (e && e.stack) ? String(e.stack) : '' });
     throw e;
   }
 }
 
 function createFiveMinuteTrigger() {
-  ScriptApp.newTrigger('pollScores_').timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger('pollScores').timeBased().everyMinutes(5).create();
   SpreadsheetApp.getActive().toast('Created 5-minute trigger for score polling.');
 }
 function deleteAllTriggers() {

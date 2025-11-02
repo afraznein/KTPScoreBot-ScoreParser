@@ -435,7 +435,7 @@ function getCanonicalTeamMap() {
   if (__TEAM_CANON_CACHE) return __TEAM_CANON_CACHE;
   const map = {};
   for (const sheetName of DIVISION_SHEETS) {
-    const sh = getSheetByName_(sheetName);
+    const sh = getSheetByName(sheetName);
     if (!sh) continue;
     const vals = sh.getRange(TEAM_CANON_RANGE).getValues().flat();
     for (const v of vals) {
@@ -654,7 +654,7 @@ let __RECEIPT_CACHE = null;
 let __RECEIPT_MSGID_CACHE = null;
 
 function getReceiptsSheet() {
-  const sh = ensureSheet_(RECEIPTS_SHEET, [
+  const sh = ensureSheet(RECEIPTS_SHEET, [
     'Time','Division','Row','Map','TeamC','TeamG','ScoreC','ScoreG','MsgId','AuthorId','Note','ContentHash','EditedTS'
   ]);
   // If an older sheet exists with fewer columns, do nothing; appendRow can still write extra cols.

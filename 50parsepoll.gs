@@ -14,7 +14,7 @@
  * // Returns: { division: "Gold", map: "dod_lennon2", team1: "WICKEDS", score1: 5, op: ">", team2: "AVENGERS", score2: 3, noteFF: false }
  */
 function parseScoreLine(raw) {
-  let s = stripEmojis_((raw || '').trim(), { collapse:false });
+  let s = stripEmojis((raw || '').trim(), { collapse:false });
 
   // Optional division
   let division = null;
@@ -28,7 +28,7 @@ function parseScoreLine(raw) {
   const rest = mapM[2].trim();
 
   // Map alias normalize - normalizeMapToken_ returns canonical dod_* format
-  const mapLower = normalizeMapToken_(mapToken);
+  const mapLower = normalizeMapToken(mapToken);
   if (!mapLower) return null; // unknown map
 
   // Operand split: support >, <, -, :
@@ -41,16 +41,16 @@ function parseScoreLine(raw) {
 
   // side parsing: score may be before OR after team; “FF/forfeit” allowed
   function parseSide(sideText) {
-    const txt = stripEmojis_(sideText, { collapse:false }).replace(/\s+/g,' ').trim();
+    const txt = stripEmojis(sideText, { collapse:false }).replace(/\s+/g,' ').trim();
     // detect FF
     const ff = /\b(ff|forfeit)\b/i.test(txt);
-    if (ff) return { team: normalizeTeamName_(txt.replace(/\b(ff|forfeit)\b/ig,'')), score: null, ff:true };
+    if (ff) return { team: normalizeTeamName(txt.replace(/\b(ff|forfeit)\b/ig,'')), score: null, ff:true };
 
     const m = txt.match(/(\d{1,4})/);
-    if (!m) return { team: normalizeTeamName_(txt), score:null, ff:false };
+    if (!m) return { team: normalizeTeamName(txt), score:null, ff:false };
     const score = parseInt(m[1],10);
     const teamRaw = (txt.slice(0,m.index) + txt.slice(m.index + m[1].length)).trim();
-    const team = normalizeTeamName_(teamRaw);
+    const team = normalizeTeamName(teamRaw);
     return { team, score, ff:false };
   }
 
@@ -82,19 +82,19 @@ function parseScoreLine(raw) {
 
 /*************** POLLING ***************/
 function pollScores() {
-  if (AUTO_RELOAD_ALIASES) reloadAliasCaches_();   // cheap + deterministic
-  if (isQuotaCooldown_()) { SpreadsheetApp.getActive().toast('Poll skipped (relay in cooldown).'); return 0; }
+  if (AUTO_RELOAD_ALIASES) reloadAliasCaches();   // cheap + deterministic
+  if (isQuotaCooldown()) { SpreadsheetApp.getActive().toast('Poll skipped (relay in cooldown).'); return 0; }
 
-  const startMs = nowMs_();
-  const cursorBefore = getCursor_(SCORES_CHANNEL_ID) || '';
-  const cnt = _makeCounters_();
+  const startMs = nowMs();
+  const cursorBefore = getCursor(SCORES_CHANNEL_ID) || '';
+  const cnt = makeCounters();
 
   // main page after cursor (smaller limit)
-  const msgs = fetchChannelMessages_(SCORES_CHANNEL_ID, cursorBefore, DEFAULT_LIMIT);
+  const msgs = fetchChannelMessages(SCORES_CHANNEL_ID, cursorBefore, DEFAULT_LIMIT);
   let merged = msgs || [];
 
-  if (shouldFetchRecentPage_()) {
-    const recentRaw = fetchChannelMessages_(SCORES_CHANNEL_ID, null, RECENT_LIMIT);
+  if (shouldFetchRecentPage()) {
+    const recentRaw = fetchChannelMessages(SCORES_CHANNEL_ID, null, RECENT_LIMIT);
     const cutoff = Date.now() - BACKFILL_MINUTES * 60 * 1000;
     const recent = (recentRaw || [])
       .filter(m => {
@@ -117,7 +117,7 @@ function pollScores() {
 
   for (const m of merged) {
     if (processed >= MAX_MESSAGES_PER_POLL) break;
-    if (nowMs_() - startMs > (MAX_MS_PER_POLL - RUNTIME_SAFETY_BUFFER)) break;
+    if (nowMs() - startMs > (MAX_MS_PER_POLL - RUNTIME_SAFETY_BUFFER)) break;
 
     cnt.seen++;
 
@@ -128,23 +128,23 @@ function pollScores() {
     const content = String(m.content || '').trim();
     if (!content) continue;
 
-    if (isWeeklyScoresBanner_(content)) { cnt.banners++; if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipWeeklyBanner',{msgId}); continue; }
+    if (isWeeklyScoresBanner(content)) { cnt.banners++; if (PARSE_DEBUG_VERBOSE) log('INFO','SkipWeeklyBanner',{msgId}); continue; }
 
-    const contentHash = computeContentHash_(content);
+    const contentHash = computeContentHash(content);
     const editedTs    = String(m.edited_timestamp || '');
 
     // skip unchanged (fast path)
-    const prevByMsg = findReceiptByMsgId_(msgId);
+    const prevByMsg = findReceiptByMsgId(msgId);
     if (!REPARSE_FORCE && prevByMsg && prevByMsg.contentHash === contentHash) {
       cnt.skipSameHash++;
-      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipSameHash',{msgId});
+      if (PARSE_DEBUG_VERBOSE) log('INFO','SkipSameHash',{msgId});
       continue;
     }
 
     const parsed = parseScoreLine(content);
-    if (!parsed) { cnt.unparsable++; if (PARSE_DEBUG_VERBOSE) log_('INFO','Unparsable message',{msgId,content}); continue; }
+    if (!parsed) { cnt.unparsable++; if (PARSE_DEBUG_VERBOSE) log('INFO','Unparsable message',{msgId,content}); continue; }
     if (PARSE_DEBUG_VERBOSE) {
-      log_('INFO','ParsedOK', 
+      log('INFO','ParsedOK', 
       {msgId,divisionHint: parsed.division || '',map: parsed.map,t1: parsed.team1, s1: parsed.score1,op: parsed.op,t2: parsed.team2, s2: parsed.score2,noteFF: !!parsed.noteFF});
     }
 
@@ -157,36 +157,36 @@ function pollScores() {
 
     if (parsed.team1 === '__PLACEHOLDER__' || parsed.team2 === '__PLACEHOLDER__') {
       cnt.placeholders++;
-      log_('INFO','Skip placeholder team (pre-unknown-check)', { msgId, team1: parsed.team1, team2: parsed.team2 });
+      log('INFO','Skip placeholder team (pre-unknown-check)', { msgId, team1: parsed.team1, team2: parsed.team2 });
       continue;
     }
 
     const unknown = [];
-    if (!isCanonTeam_(parsed.team1)) unknown.push(parsed.team1);
-    if (!isCanonTeam_(parsed.team2)) unknown.push(parsed.team2);
+    if (!isCanonTeam(parsed.team1)) unknown.push(parsed.team1);
+    if (!isCanonTeam(parsed.team2)) unknown.push(parsed.team2);
     if (unknown.length) {
       cnt.unknownTeams++;
-      alertUnrecognizedTeams_(authorId, parsed.map, parsed.team1, parsed.team2, unknown, msgId);
-      maybeSendErrorDM_(authorId, `I couldn’t match those team name(s): ${unknown.join(', ')} on \`${parsed.map}\`. Please use exact names from the sheet or add aliases.`);
+      alertUnrecognizedTeams(authorId, parsed.map, parsed.team1, parsed.team2, unknown, msgId);
+      maybeSendErrorDM(authorId, `I couldn’t match those team name(s): ${unknown.join(', ')} on \`${parsed.map}\`. Please use exact names from the sheet or add aliases.`);
       continue;
     }
 
-    const target = autodetectDivisionAndRow_(parsed.map, parsed.team1, parsed.team2, parsed.division);
+    const target = autodetectDivisionAndRow(parsed.map, parsed.team1, parsed.team2, parsed.division);
     if (!target) {
       cnt.targetMissing++;
       const diag = {};
       for (const d of DIVISION_SHEETS) {
-        const sh = getSheetByName_(d); if (!sh) continue;
-        const b = findBlockByMap_(sh, parsed.map);
+        const sh = getSheetByName(d); if (!sh) continue;
+        const b = findBlockByMap(sh, parsed.map);
         diag[d] = b ? { top:b.top, date:b.weekDate } : null;
       }
-      log_('WARN','Could not determine division/row', { msgId, map: parsed.map, t1: parsed.team1, t2: parsed.team2, diag });
-      maybeSendErrorDM_(authorId, `I couldn’t find your matchup \`${parsed.team1}\` vs \`${parsed.team2}\` on \`${parsed.map}\`. Please ensure team names match the sheet (A3:A22) and the map token is first (e.g., \`dod_lennon2\`).`);
+      log('WARN','Could not determine division/row', { msgId, map: parsed.map, t1: parsed.team1, t2: parsed.team2, diag });
+      maybeSendErrorDM(authorId, `I couldn’t find your matchup \`${parsed.team1}\` vs \`${parsed.team2}\` on \`${parsed.map}\`. Please ensure team names match the sheet (A3:A22) and the map token is first (e.g., \`dod_lennon2\`).`);
       continue;
     }
 
-    const write = applyScoresToRow_(target.sheet, target.row, target.team1, target.team2, parsed);
-    if (!write.ok) { cnt.writeBlocked++; log_('WARN','Update blocked/failed',{reason:write.reason,sheet:target.sheet.getName(),row:target.row,msgId}); continue; }
+    const write = applyScoresToRow(target.sheet, target.row, target.team1, target.team2, parsed);
+    if (!write.ok) { cnt.writeBlocked++; log('WARN','Update blocked/failed',{reason:write.reason,sheet:target.sheet.getName(),row:target.row,msgId}); continue; }
 
     // Count outcomes
     if (REPARSE_FORCE) {
@@ -198,22 +198,22 @@ function pollScores() {
 
     // optional success DM (respect DM_ENABLED and not during reparse if you want)
     if (write.prev && parsed.__authorId && DM_ENABLED && !REPARSE_FORCE) {
-      postDM_(parsed.__authorId, `Update applied: ${target.sheet.getName()} row ${target.row} on ${parsed.map} is now ${parsed.team1} ${parsed.score1} ${parsed.op} ${parsed.score2} ${parsed.team2}.`);
+      postDM(parsed.__authorId, `Update applied: ${target.sheet.getName()} row ${target.row} on ${parsed.map} is now ${parsed.team1} ${parsed.score1} ${parsed.op} ${parsed.score2} ${parsed.team2}.`);
     }
-    if (PARSE_DEBUG_VERBOSE) {log_('INFO','AppliedOK', 
+    if (PARSE_DEBUG_VERBOSE) {log('INFO','AppliedOK', 
       {msgId,division: target.sheet.getName(),row: target.row,map: parsed.map,t1: parsed.team1, s1: parsed.score1,t2: parsed.team2, s2: parsed.score2});
     }
 
-    try { postReaction_(SCORES_CHANNEL_ID, msgId, REACT_KTP); postReaction_(SCORES_CHANNEL_ID, msgId, REACT_OK); }
-    catch (e) { log_('WARN','react exceptions',{msgId,error:String(e)}); }
+    try { postReaction(SCORES_CHANNEL_ID, msgId, REACT_KTP); postReaction(SCORES_CHANNEL_ID, msgId, REACT_OK); }
+    catch (e) { log('WARN','react exceptions',{msgId,error:String(e)}); }
 
     if (RESULTS_LOG_CHANNEL) {
       let modeTag = 'OK';
       if (REPARSE_FORCE) modeTag = write.noChange ? 'REPARSE_NOCHANGE' : 'REPARSE_APPLIED';
       else if (write.prev) modeTag = 'EDIT';
       const prevScoresOpt = write.prevScores || null;
-      const line = formatScoreLine_(target.sheet.getName(), target.row, parsed, target, authorId, modeTag, prevScoresOpt);
-      relayPost_('/reply', { channelId:String(RESULTS_LOG_CHANNEL), content: line });
+      const line = formatScoreLine(target.sheet.getName(), target.row, parsed, target, authorId, modeTag, prevScoresOpt);
+      relayPost('/reply', { channelId:String(RESULTS_LOG_CHANNEL), content: line });
     }
 
     processed++;
@@ -221,37 +221,37 @@ function pollScores() {
 
   // Persist cursor only if advanced
   if (cursorAfter && compareSnowflakes(cursorAfter, cursorBefore) > 0) {
-    setCursor_(SCORES_CHANNEL_ID, cursorAfter);
-  if (PARSE_DEBUG_VERBOSE) log_('INFO','CursorAdvanced', { from: cursorBefore, to: cursorAfter });
+    setCursor(SCORES_CHANNEL_ID, cursorAfter);
+  if (PARSE_DEBUG_VERBOSE) log('INFO','CursorAdvanced', { from: cursorBefore, to: cursorAfter });
   } else if (PARSE_DEBUG_VERBOSE) {
-    log_('INFO','CursorUnchanged', { at: cursorBefore });
+    log('INFO','CursorUnchanged', { at: cursorBefore });
   }
 
-  const durationMs = nowMs_() - startMs;
-  _postRunSummary_(RESULTS_LOG_CHANNEL, { kind:'pollScores', cursorBefore, cursorAfter, durationMs }, cnt);
+  const durationMs = nowMs() - startMs;
+  postRunSummary(RESULTS_LOG_CHANNEL, { kind:'pollScores', cursorBefore, cursorAfter, durationMs }, cnt);
 
-  SpreadsheetApp.getActive().toast(`Poll complete: ${processed} msg(s) at ${fmtTs_()}.`);
+  SpreadsheetApp.getActive().toast(`Poll complete: ${processed} msg(s) at ${formatTimestamp()}.`);
   return processed;
 }
 
 
 function pollFromIdOnce(startId, includeStart) {
-  if (AUTO_RELOAD_ALIASES) reloadAliasCaches_();
+  if (AUTO_RELOAD_ALIASES) reloadAliasCaches();
 
   // normalize startId
   startId = startId ? String(startId) : '';
-  if (PARSE_DEBUG_VERBOSE) log_('INFO','PollFromId params', { startId, includeStart: !!includeStart });
+  if (PARSE_DEBUG_VERBOSE) log('INFO','PollFromId params', { startId, includeStart: !!includeStart });
 
-  const startMs = nowMs_();
+  const startMs = nowMs();
   let batch = [];
 
   if (includeStart && startId) {
-    const one = fetchSingleMessageWithDiag_(SCORES_CHANNEL_ID, startId);
+    const one = fetchSingleMessageWithDiag(SCORES_CHANNEL_ID, startId);
     if (one && one.msg) batch.push(one.msg);
   }
 
   // fetch strictly "after" startId from relay (client cap)
-  const newer = fetchChannelMessages_(SCORES_CHANNEL_ID, startId, DEFAULT_LIMIT);
+  const newer = fetchChannelMessages(SCORES_CHANNEL_ID, startId, DEFAULT_LIMIT);
   if (newer && newer.length) batch = batch.concat(newer);
   if (!batch.length) return 0;
 
@@ -272,42 +272,42 @@ function pollFromIdOnce(startId, includeStart) {
 
   for (const m of batch) {
     if (processed >= MAX_MESSAGES_PER_POLL) break;
-    if (nowMs_() - startMs > (MAX_MS_PER_POLL - RUNTIME_SAFETY_BUFFER)) break;
+    if (nowMs() - startMs > (MAX_MS_PER_POLL - RUNTIME_SAFETY_BUFFER)) break;
 
     const msgId    = String(m.id);
     if (lastProcessedId && compareSnowflakes(msgId, lastProcessedId) <= 0) {
-      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipNonMonotonic', { msgId, lastProcessedId });
+      if (PARSE_DEBUG_VERBOSE) log('INFO','SkipNonMonotonic', { msgId, lastProcessedId });
       continue;
     }
 
     const authorId = String(m.author?.id || '');
     const content  = String(m.content || '').trim();
     if (!content) { lastProcessedId = msgId; continue; }
-    if (isWeeklyScoresBanner_(content)) {
-      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipWeeklyBanner', { msgId });
+    if (isWeeklyScoresBanner(content)) {
+      if (PARSE_DEBUG_VERBOSE) log('INFO','SkipWeeklyBanner', { msgId });
       lastProcessedId = msgId;
       continue;
     }
 
-    const contentHash = computeContentHash_(content);
+    const contentHash = computeContentHash(content);
     const editedTs    = String(m.edited_timestamp || '');
 
-    const prevByMsg = findReceiptByMsgId_(msgId);
+    const prevByMsg = findReceiptByMsgId(msgId);
     if (!REPARSE_FORCE && prevByMsg && prevByMsg.contentHash === contentHash) {
-      if (PARSE_DEBUG_VERBOSE) log_('INFO','SkipSameHash', { msgId });
+      if (PARSE_DEBUG_VERBOSE) log('INFO','SkipSameHash', { msgId });
       lastProcessedId = msgId;   // keep advancing the monotonic pointer
       continue;
     }
 
     const parsed = parseScoreLine(content);
     if (!parsed) {
-      if (PARSE_DEBUG_VERBOSE) log_('INFO','Unparsable message', { msgId, content });
+      if (PARSE_DEBUG_VERBOSE) log('INFO','Unparsable message', { msgId, content });
       lastProcessedId = msgId;
       continue;
     }
 
     if (PARSE_DEBUG_VERBOSE) {
-      log_('INFO','ParsedOK', {
+      log('INFO','ParsedOK', {
         msgId,
         divisionHint: parsed.division || '',
         map: parsed.map,
@@ -326,18 +326,18 @@ function pollFromIdOnce(startId, includeStart) {
 
     // placeholders → skip
     if (parsed.team1 === '__PLACEHOLDER__' || parsed.team2 === '__PLACEHOLDER__') {
-      log_('INFO','Skip placeholder team (pollFromIdOnce)', { msgId, t1: parsed.team1, t2: parsed.team2 });
+      log('INFO','Skip placeholder team (pollFromIdOnce)', { msgId, t1: parsed.team1, t2: parsed.team2 });
       lastProcessedId = msgId;
       continue;
     }
 
     // unknown team(s) → DM + skip
     const unknown = [];
-    if (!isCanonTeam_(parsed.team1)) unknown.push(parsed.team1);
-    if (!isCanonTeam_(parsed.team2)) unknown.push(parsed.team2);
+    if (!isCanonTeam(parsed.team1)) unknown.push(parsed.team1);
+    if (!isCanonTeam(parsed.team2)) unknown.push(parsed.team2);
     if (unknown.length) {
-      alertUnrecognizedTeams_(authorId, parsed.map, parsed.team1, parsed.team2, unknown, msgId);
-      maybeSendErrorDM_(authorId,
+      alertUnrecognizedTeams(authorId, parsed.map, parsed.team1, parsed.team2, unknown, msgId);
+      maybeSendErrorDM(authorId,
         `I couldn’t match those team name(s): ${unknown.join(', ')} on \`${parsed.map}\`. ` +
         `Please use exact names from the sheet or add aliases.`
       );
@@ -346,9 +346,9 @@ function pollFromIdOnce(startId, includeStart) {
     }
 
     // locate target row
-    const target = autodetectDivisionAndRow_(parsed.map, parsed.team1, parsed.team2, parsed.division);
+    const target = autodetectDivisionAndRow(parsed.map, parsed.team1, parsed.team2, parsed.division);
     if (!target) {
-      maybeSendErrorDM_(authorId,
+      maybeSendErrorDM(authorId,
         `I couldn’t find the matchup \`${parsed.team1}\` vs \`${parsed.team2}\` on \`${parsed.map}\`. ` +
         `Please check team names (A3:A22) and that the map token is first (e.g., \`dod_lennon2\`).`
       );
@@ -357,23 +357,23 @@ function pollFromIdOnce(startId, includeStart) {
     }
 
     // write scores (now returns prevScores + noChange flags)
-    const write = applyScoresToRow_(target.sheet, target.row, target.team1, target.team2, parsed);
+    const write = applyScoresToRow(target.sheet, target.row, target.team1, target.team2, parsed);
     if (!write.ok) {
-      log_('WARN','Update blocked/failed', { reason: write.reason, sheet: target.sheet.getName(), row: target.row, msgId });
+      log('WARN','Update blocked/failed', { reason: write.reason, sheet: target.sheet.getName(), row: target.row, msgId });
       lastProcessedId = msgId;
       continue;
     }
 
     // optional success DM on edits; obey your DM toggle if you prefer
     if (write.prev && parsed.__authorId && DM_ENABLED) {
-      postDM_(parsed.__authorId,
+      postDM(parsed.__authorId,
         `Update applied: ${target.sheet.getName()} row ${target.row} on ${parsed.map} is now ` +
         `${parsed.team1} ${parsed.score1} ${parsed.op} ${parsed.score2} ${parsed.team2}.`
       );
     }
 
     if (PARSE_DEBUG_VERBOSE) {
-      log_('INFO','AppliedOK', {
+      log('INFO','AppliedOK', {
         msgId,
         division: target.sheet.getName(),
         row: target.row,
@@ -385,10 +385,10 @@ function pollFromIdOnce(startId, includeStart) {
 
     // React (best-effort)
     try {
-      postReaction_(SCORES_CHANNEL_ID, msgId, REACT_KTP);
-      postReaction_(SCORES_CHANNEL_ID, msgId, REACT_OK);
+      postReaction(SCORES_CHANNEL_ID, msgId, REACT_KTP);
+      postReaction(SCORES_CHANNEL_ID, msgId, REACT_OK);
     } catch (e) {
-      log_('WARN','react exceptions', { msgId, error:String(e) });
+      log('WARN','react exceptions', { msgId, error:String(e) });
     }
 
     // channel feed line (same formatter as pollScores)
@@ -400,8 +400,8 @@ function pollFromIdOnce(startId, includeStart) {
         modeTag = 'EDIT';
       }
       const prevScoresOpt = write.prevScores || null;
-      const line = formatScoreLine_(target.sheet.getName(), target.row, parsed, target, authorId, modeTag, prevScoresOpt);
-      relayPost_('/reply', { channelId:String(RESULTS_LOG_CHANNEL), content: line });
+      const line = formatScoreLine(target.sheet.getName(), target.row, parsed, target, authorId, modeTag, prevScoresOpt);
+      relayPost('/reply', { channelId:String(RESULTS_LOG_CHANNEL), content: line });
     }
 
     lastProcessedId = msgId; // monotonic advance

@@ -37,7 +37,7 @@ function relayPost(path, payload) {
  * @returns {Array<Object>} Array of Discord message objects, or empty array on error/cooldown
  */
 function fetchChannelMessages(channelId, afterId, limitOpt) {
-  if (isQuotaCooldown_()) return []; // respect cooldown: no relay calls
+  if (isQuotaCooldown()) return []; // respect cooldown: no relay calls
 
   var limit = Math.max(5, Number(limitOpt || DEFAULT_LIMIT));
   var qs =
@@ -46,14 +46,14 @@ function fetchChannelMessages(channelId, afterId, limitOpt) {
     '&limit=' + encodeURIComponent(limit);
 
   // small jitter to de-sync concurrent scripts
-  Utilities.sleep(jitterMs_());
+  Utilities.sleep(jitterMs());
 
   try {
     var res = relayGet('/messages?' + qs);
     if (res.getResponseCode && res.getResponseCode() !== 200) {
       var body = (res.getContentText && res.getContentText()) || '';
       if (/Bandwidth quota exceeded/i.test(body)) {
-        startQuotaCooldown_(QUOTA_BACKOFF_MINUTES);
+        startQuotaCooldown(QUOTA_BACKOFF_MINUTES);
         return [];
       }
       throw new Error('Relay /messages failed: ' + res.getResponseCode() + ' ' + body);
@@ -62,7 +62,7 @@ function fetchChannelMessages(channelId, afterId, limitOpt) {
   } catch (e) {
     var msg = String(e);
     if (/Bandwidth quota exceeded/i.test(msg)) {
-      startQuotaCooldown_(QUOTA_BACKOFF_MINUTES);
+      startQuotaCooldown(QUOTA_BACKOFF_MINUTES);
       return [];
     }
     // On other errors, try a smaller limit once
@@ -99,7 +99,7 @@ function fetchSingleMessageWithDiag(channelId, messageId) {
 /*************** POSTERS ***************/
 function postReaction(channelId, messageId, emoji) {
   const res = relayPost('/react', { channelId:String(channelId), messageId:String(messageId), emoji:String(emoji) });
-  if (res.getResponseCode() !== 204) log_('WARN','react failed', { code: res.getResponseCode(), body: res.getContentText()?.slice(0,400) });
+  if (res.getResponseCode() !== 204) log('WARN','react failed', { code: res.getResponseCode(), body: res.getContentText()?.slice(0,400) });
 }
 
 function postDM(userId, content) {
@@ -110,7 +110,7 @@ function postDM(userId, content) {
   // Suppress DMs during debug runs
   if (DM_ENABLED === false) {
     // Log locally so we can see what *would* have been sent
-    log_('INFO', 'DM suppressed (debug mode)', { to: userId, content: content.slice(0, 250) });
+    log('INFO', 'DM suppressed (debug mode)', { to: userId, content: content.slice(0, 250) });
 
     // Optional: echo suppressed DM into a debug channel
     if (DM_DEBUG_ECHO_CHANNEL) {
@@ -120,7 +120,7 @@ function postDM(userId, content) {
           content: `*(suppressed DM to <@${userId}>)* ${content}`
         });
       } catch (e) {
-        log_('WARN', 'DM echo failed', { to: userId, err: String(e) });
+        log('WARN', 'DM echo failed', { to: userId, err: String(e) });
       }
     }
     return { ok:false, suppressed:true };
@@ -131,7 +131,7 @@ function postDM(userId, content) {
     const res = relayPost('/dm', { userId: userId, content: content });
     return { ok:true, res: res };
   } catch (e) {
-    log_('ERROR', 'DM send failed', { to: userId, err: String(e) });
+    log('ERROR', 'DM send failed', { to: userId, err: String(e) });
     return { ok:false, error:String(e) };
   }
 }
@@ -154,7 +154,7 @@ function alertUnrecognizedTeams(authorId, mapLower, team1U, team2U, unknownList,
     relayPost('/reply', { channelId:String(RESULTS_LOG_CHANNEL), content: alertLine });
   }
 
-  log_('WARN', 'Unknown team(s) in submission', { msgId, map: mapLower, team1: team1U, team2: team2U, unknown: unknownList });
+  log('WARN', 'Unknown team(s) in submission', { msgId, map: mapLower, team1: team1U, team2: team2U, unknown: unknownList });
 }
 
 // DM errors even if DM_ENABLED=false (controlled by ERROR_DMS_ALWAYS)
@@ -164,7 +164,7 @@ function maybeSendErrorDM(userId, content) {
   if (ERROR_DMS_ALWAYS) {
     // temporarily bypass: call relay directly
     try { relayPost('/dm', { userId: String(userId), content: String(content) }); }
-    catch(e){ log_('WARN','error DM send failed', {e:String(e)}); }
+    catch(e){ log('WARN','error DM send failed', {e:String(e)}); }
   }
 }
 
@@ -220,7 +220,7 @@ function buildDiscordMessageLink(channelId, messageId) {
     }
     return 'https://discord.com/channels/' + guildId + '/' + channelId + '/' + messageId;
   } catch (e) {
-    log_('WARN', 'buildDiscordMessageLink failed', { channelId, messageId, error: String(e) });
+    log('WARN', 'buildDiscordMessageLink failed', { channelId, messageId, error: String(e) });
     return '';
   }
 }
