@@ -60,8 +60,8 @@ const COL_T2_NAME = 7; // G (read-only)
 const COL_T2_SC   = 8; // H
 
 // Grid geometry for week headers in column A
-var MAP_HEADER_FIRST_ROW = 28;  // A28
-var MAP_HEADER_ROW_STEP  = 11;  // 28, 39, 50, ...
+var MAP_HEADER_FIRST_ROW = 27;  // A27
+var MAP_HEADER_ROW_STEP  = 11;  // 27, 38, 49, 60, 71, 82, ...
 
 // Weekly banner (Monday 8:00 AM ET)
 var WEEKLY_BANNER_ENABLED = true;

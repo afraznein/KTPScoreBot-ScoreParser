@@ -24,7 +24,15 @@ function processByeScores() {
   const summary = {
     processed: [],
     skipped: [],
-    errors: []
+    errors: [],
+    stats: {
+      weeksChecked: 0,
+      futureWeeks: 0,
+      noMap: 0,
+      incomplete: 0,
+      noBye: 0,
+      noScores: 0
+    }
   };
 
   for (const division of divisions) {
@@ -37,6 +45,10 @@ function processByeScores() {
     for (let weekIndex = 1; weekIndex <= maxWeeks; weekIndex++) {
       try {
         const result = processWeekByeScores(sh, division, weekIndex, maxWeeks);
+        summary.stats.weeksChecked++;
+        if (result.skipReason) {
+          summary.stats[result.skipReason] = (summary.stats[result.skipReason] || 0) + 1;
+        }
         if (result.processed) {
           summary.processed.push(...result.processed);
         }
@@ -72,18 +84,20 @@ function processByeScores() {
  * @returns {Object} { processed: [], skipped: [] }
  */
 function processWeekByeScores(sheet, division, weekIndex, maxWeeks) {
-  const result = { processed: [], skipped: [] };
+  const result = { processed: [], skipped: [], skipReason: null };
 
   // Check if week is past or current (not future)
   if (!isWeekPastOrCurrent(sheet, weekIndex)) {
-    return result; // Skip future weeks silently
+    result.skipReason = 'futureWeeks';
+    return result;
   }
 
   const topRow = getWeekTopRow(weekIndex);
   const mapToken = readWeekMap(sheet, weekIndex);
 
   if (!mapToken) {
-    return result; // No valid map = skip
+    result.skipReason = 'noMap';
+    return result;
   }
 
   // Get all matches in this block
@@ -93,6 +107,7 @@ function processWeekByeScores(sheet, division, weekIndex, maxWeeks) {
   const { complete, byeMatches, scoredMatches, unscoredNonBye } = analyzeBlockCompletion(matches);
 
   if (!complete) {
+    result.skipReason = 'incomplete';
     // Log why we're skipping (helps debug premature/late scoring issues)
     if (unscoredNonBye.length > 0) {
       log('DEBUG', 'BYE scoring skipped: incomplete week', {
@@ -110,7 +125,8 @@ function processWeekByeScores(sheet, division, weekIndex, maxWeeks) {
   }
 
   if (byeMatches.length === 0) {
-    return result; // No BYE matches to process
+    result.skipReason = 'noBye';
+    return result;
   }
 
   // Verify at least one match has numeric scores (not just W/L flags)
@@ -119,6 +135,7 @@ function processWeekByeScores(sheet, division, weekIndex, maxWeeks) {
   );
 
   if (!hasNumericScores) {
+    result.skipReason = 'noScores';
     log('WARN', 'BYE scoring skipped: no numeric scores available for averaging', {
       division,
       week: weekIndex,
@@ -128,8 +145,21 @@ function processWeekByeScores(sheet, division, weekIndex, maxWeeks) {
     return result;
   }
 
-  // Calculate average points from scored matches
+  // Calculate average points from scored matches and collect calculation details
   const averagePoints = calculateAveragePoints(scoredMatches);
+
+  // Build calculation breakdown for reporting
+  const allScores = [];
+  for (const match of scoredMatches) {
+    if (match.score1 !== null && !isNaN(match.score1)) allScores.push(match.score1);
+    if (match.score2 !== null && !isNaN(match.score2)) allScores.push(match.score2);
+  }
+  const calcBreakdown = {
+    scores: allScores,
+    total: allScores.reduce((sum, s) => sum + s, 0),
+    count: allScores.length,
+    average: averagePoints
+  };
 
   // Process each BYE match
   for (const byeMatch of byeMatches) {
@@ -139,7 +169,8 @@ function processWeekByeScores(sheet, division, weekIndex, maxWeeks) {
       byeMatch,
       averagePoints,
       mapToken,
-      weekIndex
+      weekIndex,
+      calcBreakdown
     );
 
     if (processed.success) {
@@ -161,7 +192,7 @@ function processWeekByeScores(sheet, division, weekIndex, maxWeeks) {
  */
 function isWeekPastOrCurrent(sheet, weekIndex) {
   const topRow = getWeekTopRow(weekIndex);
-  const dateRow = topRow + 1; // A29, A40, A51, etc.
+  const dateRow = topRow + 2; // Date is 2 rows after week label (A29, A40, A51, etc.)
 
   try {
     const dateValue = sheet.getRange(dateRow, 1).getValue();
@@ -175,7 +206,7 @@ function isWeekPastOrCurrent(sheet, weekIndex) {
 
     return weekDate.getTime() <= today.getTime();
   } catch (e) {
-    log('WARN', 'isWeekPastOrCurrent: failed', { weekIndex, error: String(e) });
+    log('WARN', 'isWeekPastOrCurrent: failed', { sheet: sheet.getName(), weekIndex, error: String(e) });
     return false;
   }
 }
@@ -190,7 +221,11 @@ function isWeekPastOrCurrent(sheet, weekIndex) {
  */
 function getBlockMatches(sheet, topRow, weekIndex, maxWeeks) {
   const matches = [];
-  const startRow = topRow + 1; // First match row after header
+  // Structure: topRow = week label (header only in col A)
+  // topRow+1 = map in col A + match 1 in cols B-H
+  // topRow+2 = date in col A + match 2 in cols B-H
+  // topRow+3 to topRow+10 = matches 3-10 in cols B-H
+  const startRow = topRow + 1; // First match row (row 28 for week 1)
   const nextTop = (weekIndex < maxWeeks) ? getWeekTopRow(weekIndex + 1) : (topRow + MAP_HEADER_ROW_STEP);
   const endRow = Math.min(sheet.getLastRow(), nextTop - 1);
   const numRows = endRow - startRow + 1;
@@ -350,9 +385,10 @@ function calculateAveragePoints(scoredMatches) {
  * @param {number} averagePoints - Calculated average
  * @param {string} mapToken - Map name
  * @param {number} weekIndex - Week number
+ * @param {Object} calcBreakdown - Calculation details { scores, total, count, average }
  * @returns {Object} Processing result
  */
-function scoreByeMatch(sheet, division, byeMatch, averagePoints, mapToken, weekIndex) {
+function scoreByeMatch(sheet, division, byeMatch, averagePoints, mapToken, weekIndex, calcBreakdown) {
   const { row, team1, team2, score1, score2, wl1, wl2 } = byeMatch;
 
   // Skip if already scored (has scores OR W/L flags)
@@ -461,7 +497,9 @@ function scoreByeMatch(sheet, division, byeMatch, averagePoints, mapToken, weekI
     team1,
     team2,
     activeTeam,
-    averagePoints
+    averagePoints,
+    mapToken,
+    calcBreakdown
   };
 }
 
@@ -486,7 +524,10 @@ function logByeSummaryToDiscord(summary) {
     const items = byDiv[div];
     lines.push(`\n**${div}:**`);
     for (const item of items) {
-      lines.push(`• Week ${item.week}: ${item.activeTeam} awarded ${item.averagePoints} pts`);
+      const calc = item.calcBreakdown;
+      const scoresStr = calc.scores.join(' + ');
+      lines.push(`• Week ${item.week} (\`${item.mapToken}\`): **${item.activeTeam}** awarded **${item.averagePoints}** pts`);
+      lines.push(`  ↳ Calculation: (${scoresStr}) / ${calc.count} = ${calc.total} / ${calc.count} = ${calc.average}`);
     }
   }
 

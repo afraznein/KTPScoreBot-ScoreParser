@@ -119,15 +119,21 @@ function getNextWeekAndMapFromSchedule() {
 }
 
 /**
- * Calculate sheet row number for week header (column A map cell)
+ * Calculate sheet row number for week block start (week label row)
+ * Structure:
+ *   - topRow: Week label (column A only - true header)
+ *   - topRow+1: Map name (col A) + Match 1 data (cols B-H)
+ *   - topRow+2: Date (col A) + Match 2 data (cols B-H)
+ *   - topRow+3 to topRow+10: Matches 3-10 data (cols B-H)
  * Uses constants: MAP_HEADER_FIRST_ROW and MAP_HEADER_ROW_STEP
  *
  * @param {number} weekIndex - Week number (1-based)
- * @returns {number} Row number for this week's map header
+ * @returns {number} Row number for this week's label (top of block)
  *
  * @example
- * getWeekTopRow(1)  // 28 (if MAP_HEADER_FIRST_ROW=28)
- * getWeekTopRow(2)  // 39 (if MAP_HEADER_ROW_STEP=11)
+ * getWeekTopRow(1)  // 27 (week 1 label row)
+ * getWeekTopRow(2)  // 38 (week 2 label row)
+ * getWeekTopRow(6)  // 82 (week 6 label row)
  */
 function getWeekTopRow(weekIndex) {
   return MAP_HEADER_FIRST_ROW + (weekIndex - 1) * MAP_HEADER_ROW_STEP;
@@ -148,8 +154,9 @@ function detectMaxWeeksForSheet(sheet) {
   var count = 0;
   for (var w = 1; ; w++) {
     var top = getWeekTopRow(w);
-    if (top > last) break;
-    var v = String(sheet.getRange(top, 1).getDisplayValue() || '').trim().toLowerCase();
+    var mapRow = top + 1; // Map is one row after week label
+    if (mapRow > last) break;
+    var v = String(sheet.getRange(mapRow, 1).getDisplayValue() || '').trim().toLowerCase();
     var m = v.startsWith('dod_') ? v : ('dod_' + v);
     if (!looksLikeMapDod(m)) break;      // stop at first non-map header
     count++;
@@ -190,7 +197,8 @@ function detectMaxWeeks() {
  */
 function readWeekMap(sheet, weekIndex) {
   var top = getWeekTopRow(weekIndex);
-  var v = String(sheet.getRange(top, 1).getDisplayValue() || '').trim().toLowerCase();
+  var mapRow = top + 1; // Map is one row after week label (A28, A39, A50, etc.)
+  var v = String(sheet.getRange(mapRow, 1).getDisplayValue() || '').trim().toLowerCase();
   if (!v) return '';
   var m = v.startsWith('dod_') ? v : ('dod_' + v);
   return looksLikeMapDod(m) ? m : '';
@@ -207,13 +215,16 @@ function readWeekMap(sheet, weekIndex) {
  */
 function weekHasAnyScore(sheet, weekIndex, maxWeeks) {
   var top = getWeekTopRow(weekIndex);
-  // end row is the row before the next header; if last week, use step as height
+  // Structure: top = week label (header only in col A)
+  // top+1 = map in col A + match 1 in cols B-H
+  // top+2 = date in col A + match 2 in cols B-H
+  // Matches are in cols B-H starting at top+1
+  var start = top + 1; // First match row
   var nextTop = (weekIndex < maxWeeks) ? getWeekTopRow(weekIndex + 1) : (top + MAP_HEADER_ROW_STEP);
   var end = Math.min(sheet.getLastRow(), nextTop - 1);
-  if (end <= top) return false;
+  if (end < start) return false;
 
-  var n = end - top; // rows below header
-  var start = top + 1;
+  var n = end - start + 1; // number of match rows
   var cVals = sheet.getRange(start, COL_T1_SC, n, 1).getValues();
   var gVals = sheet.getRange(start, COL_T2_SC, n, 1).getValues();
   for (var i = 0; i < n; i++) {
