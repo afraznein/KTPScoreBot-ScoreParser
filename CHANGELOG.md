@@ -2,25 +2,38 @@
 
 All notable changes to KTP ScoreBot Score Parser will be documented in this file.
 
-## [1.0.0] - 2025-11-02
+## [2.1.0] - 2025-10-31
+
+### Changed
+- Code optimization: camelCase refactor across all files
+- Batch operations for Google Sheets reads/writes (performance improvement)
+- Constants extraction for maintainability
+
+---
+
+## [2.0.0] - 2025-10-14
 
 ### Added
-- Initial release
-- Score parsing from match screenshots using OCR/image processing
-- Discord relay integration for parsed scores
-- Google Sheets integration for score storage
-- Weekly banner generation
-- Bye handler for scheduling gaps
-- Poll parsing for match predictions
-- Debug utilities for development
+- Weekly banner posting (Monday 8 AM ET) with map schedule and division matchups
+- BYE week auto-scoring with team average point calculation
+- Map alias support (e.g., `flash` resolves to `dod_flash`)
+- Team alias support with fuzzy matching
+- Edit detection with content hashing (re-parses edited messages)
 
-### Components
-- `00config.gs` - Configuration and settings
-- `10util.gs` - Utility functions
-- `20relay.gs` - Discord relay integration
-- `30sheet.gs` - Google Sheets interface
-- `40weeklybanner.gs` - Banner image generation
-- `45byehandler.gs` - Bye week handling
-- `50parsepoll.gs` - Poll parsing
-- `60ui.gs` - User interface components
-- `70debug.gs` - Debug utilities
+### Changed
+- Improved score parsing flexibility (score before or after team name)
+- Enhanced audit logging in `_ScoreReceipts` sheet
+
+---
+
+## [1.0.0] - 2025-09-21
+
+### Added
+- Initial deployment for KTP Season 8
+- Score parsing from natural language Discord messages
+- Division auto-detection from map block + team pair
+- Google Sheets integration (W/L and score columns)
+- Discord reactions for parse status (`:ktp:`, checkmark)
+- Direct messages to users on unknown team names
+- Cursor-based polling (every 5 minutes)
+- `_ScoreReceipts` audit log sheet
