@@ -87,17 +87,21 @@ flash Wickeds 5 - Avengers 3
 
 ### Prerequisites
 - Google Sheet with KTP season structure (Bronze/Silver/Gold division sheets)
-- KTP Discord Relay deployed ([Discord Relay](https://github.com/afraznein/DiscordRelay))
+- KTP Discord Relay deployed ([Discord Relay](https://github.com/afraznein/KTPDiscordRelay))
 - Discord bot with message read + reaction permissions
 
 ### Installation
 1. Open Google Sheet > Extensions > Apps Script
 2. Create files and paste code: `00config.gs` through `70debug.gs`
-3. Edit `00config.gs` — set `RELAY_BASE`, `RELAY_AUTH`, `SCORES_CHANNEL_ID`
-4. Set up time-driven triggers:
-   - `pollScoresChannel` — every 5 minutes
-   - `postWeeklyBanner` — Monday 8-9 AM
-   - `handleAllByeMatches` — daily 8-9 AM
+3. Edit `00config.gs` — set `RELAY_BASE`, `RELAY_AUTH`, `SCORES_CHANNEL_ID`; optionally
+   `RESULTS_LOG_CHANNEL` (where confirmations and status posts land — `''` disables)
+4. Set up time-driven triggers (function names must match exactly):
+   - `pollScores` — every 5 minutes
+   - `postWeeklyScoresBanner` — Monday 8-9 AM
+   - `processByeScores` — daily 8-9 AM
+
+   The KTP menu can create these for you rather than doing it by hand — see the
+   `newTrigger` helpers in `60ui.gs` and `45byehandler.gs`.
 5. Run any function manually to grant permissions
 
 ### Sheet Structure
@@ -108,7 +112,29 @@ Silver           — Division matches
 Gold             — Division matches
 _ScoreReceipts   — Audit log (auto-created)
 KTP Info         — Weekly banner text (A1)
+_Aliases         — Team name alias -> canonical (optional)
+_MapAliases      — Map alias -> dod_map (optional)
 ```
+
+`_Aliases` and `_MapAliases` are optional, but they are what backs team-name fuzzy
+matching and the `flash` -> `dod_flash` map shorthand. A sheet without them parses
+only exact names.
+
+### Operator Menu
+
+`onOpen` installs a **Discord Scores** menu on the spreadsheet — the primary way to
+drive the bot by hand (`60ui.gs`):
+
+| Item | Does |
+|------|------|
+| Poll Now (Scores Channel) | One immediate poll from the current pointer |
+| Poll From Message ID… | Re-poll starting at a specific Discord message |
+| Set Poll Pointer… | Move the pointer manually |
+| Show Poll Pointer | Print the pointer as a clickable Discord link |
+| Jump Pointer to Latest | Skip everything unread |
+| Create / Remove Banner Trigger | Install or remove the Monday banner trigger |
+| Process BYE Scores Now | Run BYE auto-scoring immediately |
+| Create / Remove BYE Scoring Trigger | Install or remove the daily BYE trigger |
 
 ---
 
@@ -133,7 +159,7 @@ Files numbered for load order (Apps Script loads alphabetically).
 ## Related Projects
 
 **KTP Stack:**
-- [Discord Relay](https://github.com/afraznein/DiscordRelay) — HTTP proxy for Discord API (required)
+- [Discord Relay](https://github.com/afraznein/KTPDiscordRelay) — HTTP proxy for Discord API (required)
 - [KTPScoreBot-WeeklyMatches](https://github.com/afraznein/KTPScoreBot-WeeklyMatches) — Weekly match announcements
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
