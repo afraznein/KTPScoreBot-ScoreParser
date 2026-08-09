@@ -4,6 +4,8 @@ All notable changes to KTP ScoreBot Score Parser will be documented in this file
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-08-09
+
 ### Documentation
 
 All three trigger function names in the install steps were wrong, so following
@@ -39,8 +41,9 @@ Also documented:
 2.1.0 release commit and were never logged. `git diff a1467f0 HEAD` is +1017/-200
 across 12 files, most of it user-visible behavior.
 
-The `VERSION` const in `00config.gs` still reads 2.1.0. Whether this becomes 2.2.0
-or the const moves is an operator call — deliberately not decided here.
+✅ **Decided 2026-08-09 (operator): this is 2.2.0.** `VERSION` in `00config.gs` bumped
+2.1.0 → 2.2.0, so the const and this changelog now agree. The work below shipped ahead of
+the version — logging it late is why the const lagged; cutting the version is what closes it.
 
 ## [2.1.0] - 2025-10-31
 
