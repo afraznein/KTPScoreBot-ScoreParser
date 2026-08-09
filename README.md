@@ -1,6 +1,6 @@
 # KTP Score Parser
 
-**Version 2.1.0** | Automated match score parsing and Google Sheets integration for competitive Day of Defeat leagues
+**Version 2.2.0** | Automated match score parsing and Google Sheets integration for competitive Day of Defeat leagues
 
 A Google Apps Script bot that monitors a Discord channel for match results, parses scores from natural language messages, updates Google Sheets automatically, and provides validation and audit logging.
 
